@@ -1,0 +1,8 @@
+{
+  "name": "記帳 App",
+  "short_name": "記帳",
+  "start_url": ".",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#4CAF50"
+}
