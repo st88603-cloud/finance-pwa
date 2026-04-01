@@ -677,7 +677,7 @@ function renderMonthView() {
     <div class="summary-grid">
       <div class="summary-row">
         <div class="summary-row-label">年總投資報酬</div>
-        <div class="summary-row-val" style="color:var(--invest-blue);font-size:15px">${fmtMoney(yd.investTotal)}</div>
+        <div class="summary-row-val" style="color:var(--invest-blue)">${fmtMoney(yd.investTotal)}</div>
       </div>
       <div class="summary-row">
         <div class="summary-row-label">年利息</div>
@@ -789,7 +789,11 @@ function renderSettingsBody() {
           <input id="asset-val"  class="form-input" type="number" placeholder="金額" style="flex:1;font-size:14px;padding:8px"/>
           <button class="btn-sm add" onclick="saveAsset()">設定</button>
         </div>
-        ${Object.entries(DB.assets).map(([y,v])=>`<div style="font-size:12px;color:var(--text3)">${y}年: ${fmtMoney(v)}</div>`).join('')}
+        ${Object.entries(DB.assets).sort().map(([y,v])=>`
+          <div style="display:flex;align-items:center;gap:8px;width:100%">
+            <div style="flex:1;font-size:13px;color:var(--text2)">${y}年：<span style="font-family:var(--mono);font-weight:600">${fmtMoney(v)}</span></div>
+            <button class="btn-sm danger" onclick="deleteAsset(${y})" style="padding:4px 10px;font-size:11px">刪除</button>
+          </div>`).join('')}
       </div>
     </div>
     <div class="settings-section">
@@ -806,144 +810,216 @@ function saveAsset() {
   if (!y||!v) { showToast('請輸入年份和金額'); return; }
   DB.assets[y]=v; saveData(DB); renderSettingsBody(); showToast('已設定');
 }
+function deleteAsset(y) {
+  delete DB.assets[y];
+  saveData(DB); renderSettingsBody(); showToast('已刪除');
+}
 function clearAllData() {
   if (!confirm('確定要清除所有資料？此操作無法復原。')) return;
   localStorage.clear(); DB=loadData(); renderCalendar(); closeSettingsModal(); showToast('已清除');
 }
 function exportCSV() {
-  let csv='type,date,amount,note,category\n';
-  for (const [date,recs] of Object.entries(DB.records))
-    for (const r of recs) csv+=`${r.type},${date},${r.amount},"${r.note||''}",daily\n`;
-  for (const [mk,reg] of Object.entries(DB.regular)) {
+  let csv = 'type,date,amount,note,category\n';
+
+  // ── Global preset name lists (so new device restores them) ──
+  for (const name of DB.presets)
+    csv += `preset,0000-01-01,0,"${name}",preset_expense\n`;
+  for (const name of DB.incomePresets)
+    csv += `preset,0000-01-01,0,"${name}",preset_income\n`;
+  for (const name of DB.interestPresets)
+    csv += `preset,0000-01-01,0,"${name}",preset_interest\n`;
+  for (const name of DB.dividendPresets)
+    csv += `preset,0000-01-01,0,"${name}",preset_dividend\n`;
+
+  // ── Assets ──
+  for (const [y, v] of Object.entries(DB.assets))
+    csv += `asset,${y}-01-01,${v},"",asset\n`;
+
+  // ── Daily records ──
+  for (const [date, recs] of Object.entries(DB.records))
+    for (const r of recs)
+      csv += `${r.type},${date},${r.amount},"${(r.note||'').replace(/"/g,'""')}",daily\n`;
+
+  // ── Regular monthly data ──
+  for (const [mk, reg] of Object.entries(DB.regular)) {
     if (reg.expense)
-      for (const [name,amt] of Object.entries(reg.expense))
-        csv+=`expense,${mk}-01,${amt},"${name}",regular_expense\n`;
+      for (const [name, amt] of Object.entries(reg.expense))
+        csv += `expense,${mk}-01,${amt},"${name.replace(/"/g,'""')}",regular_expense\n`;
+
     if (reg.incomePresets)
       for (const item of reg.incomePresets)
-        csv+=`income,${mk}-01,${item.amount},"${item.name}",regular_income\n`;
+        csv += `income,${mk}-01,${item.amount},"${item.name.replace(/"/g,'""')}",regular_income\n`;
     else if (reg.income)
-      csv+=`income,${mk}-01,${reg.income},"薪資",regular_income\n`;
+      csv += `income,${mk}-01,${reg.income},"薪資",regular_income\n`;
+
+    // interest/dividend amounts (global-preset style)
+    if (reg.interestAmounts)
+      for (const [name, amt] of Object.entries(reg.interestAmounts))
+        csv += `interest,${mk}-01,${amt},"${name.replace(/"/g,'""')}",regular_interest\n`;
+    if (reg.dividendAmounts)
+      for (const [name, amt] of Object.entries(reg.dividendAmounts))
+        csv += `dividend,${mk}-01,${amt},"${name.replace(/"/g,'""')}",regular_dividend\n`;
+
+    // stock records (old invest array — only stock type remains here)
     if (reg.invest)
       for (const inv of reg.invest) {
-        const amt=inv.type==='stock'&&inv.direction==='loss'?-inv.amount:inv.amount;
-        csv+=`invest,${mk}-01,${amt},"${inv.note||inv.type}",invest\n`;
+        const amt = inv.direction === 'loss' ? -inv.amount : inv.amount;
+        csv += `stock,${mk}-01,${amt},"${(inv.note||'').replace(/"/g,'""')}",invest_stock\n`;
       }
   }
-  const blob=new Blob(['\ufeff'+csv],{type:'text/csv;charset=utf-8'});
-  const url=URL.createObjectURL(blob);
-  const a=document.createElement('a');
-  a.href=url; a.download=`records_${new Date().toISOString().split('T')[0]}.csv`; a.click();
-  URL.revokeObjectURL(url); showToast('已匯出 CSV');
+
+  const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href = url;
+  a.download = `records_${new Date().toISOString().split('T')[0]}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+  showToast('已匯出 CSV');
 }
 function importCSV(input) {
   const file = input.files[0]; if (!file) return;
 
-  // Try UTF-8 first, fall back to Big5 (common for Excel Taiwan)
-  const tryParse = (text) => {
-    // Strip BOM (UTF-8 or UTF-16)
-    text = text.replace(/^\uFEFF/, '').replace(/^\xFF\xFE/, '');
-
-    // Auto-detect delimiter: semicolons (Excel European/Taiwan default) or commas
-    const firstLine = text.split('\n')[0];
-    const delim = (firstLine.split(';').length > firstLine.split(',').length) ? ';' : ',';
-
-    const lines = text.split(/\r?\n/).filter(l => l.trim());
-    if (lines.length < 2) return 0;
-
-    // Detect header row and skip it
-    const headerLine = lines[0].toLowerCase();
-    const startIdx   = (headerLine.includes('type') || headerLine.includes('類型') ||
-                        headerLine.includes('date')  || headerLine.includes('日期')) ? 1 : 0;
-
-    let count = 0;
-    for (let i = startIdx; i < lines.length; i++) {
-      const row = parseCSVLine(lines[i], delim);
-      if (row.length < 3) continue;
-
-      // Support both column orders:
-      // Format A (app export): type, date, amount, note, category
-      // Format B (user-friendly): date, type, amount, note, category
-      let type, date, amtRaw, note, cat;
-
-      // Detect format by checking if col[0] looks like a date (YYYY-MM)
-      if (/^\d{4}-\d{2}/.test(row[0])) {
-        // Format B: date first
-        [date, type, amtRaw, note, cat] = row;
-      } else {
-        // Format A: type first
-        [type, date, amtRaw, note, cat] = row;
-      }
-
-      // Normalise
-      type = (type||'').trim().toLowerCase();
-      date = (date||'').trim();
-      note = (note||'').trim();
-      cat  = (cat||'').trim().toLowerCase();
-      const amt = parseFloat((amtRaw||'').replace(/[, ]/g,''));
-
-      if (!date || isNaN(amt)) continue;
-
-      // Infer category from type if cat is missing
-      if (!cat) {
-        if (type==='expense' || type==='支出')       cat='daily';
-        else if (type==='income' || type==='收入')   cat='daily';
-        else if (type==='invest' || type==='投資')   cat='invest';
-        else if (type==='regular_expense')            cat='regular_expense';
-        else if (type==='regular_income')             cat='regular_income';
-        else                                          cat='daily';
-      }
-
-      // Normalise type aliases
-      if (type==='支出') type='expense';
-      if (type==='收入') type='income';
-
-      // Infer date format: YYYY-MM-DD or YYYY-MM or YYYY/MM/DD
-      date = date.replace(/\//g,'-');
-      if (/^\d{4}-\d{2}$/.test(date)) date = date + '-01';
-
-      if (cat==='daily') {
-        const dk = date.substring(0,10);
-        if (!DB.records[dk]) DB.records[dk]=[];
-        DB.records[dk].push({id:Date.now().toString()+i+Math.random(), amount:Math.abs(amt), note, type:(type==='expense'||type==='income'?type:'expense'), ts:Date.now()});
-        count++;
-      } else if (cat==='regular_expense') {
-        const mk=date.substring(0,7);
-        if (!DB.regular[mk])         DB.regular[mk]={};
-        if (!DB.regular[mk].expense) DB.regular[mk].expense={};
-        DB.regular[mk].expense[note]=Math.abs(amt); count++;
-      } else if (cat==='regular_income') {
-        const mk=date.substring(0,7);
-        if (!DB.regular[mk])               DB.regular[mk]={};
-        if (!DB.regular[mk].incomePresets) DB.regular[mk].incomePresets=[];
-        const idx=DB.regular[mk].incomePresets.findIndex(x=>x.name===note);
-        if (idx>=0) DB.regular[mk].incomePresets[idx].amount=Math.abs(amt);
-        else        DB.regular[mk].incomePresets.push({name:note||'薪資',amount:Math.abs(amt)});
-        count++;
-      } else if (cat==='invest') {
-        const mk=date.substring(0,7);
-        if (!DB.regular[mk])        DB.regular[mk]={};
-        if (!DB.regular[mk].invest) DB.regular[mk].invest=[];
-        // note may be invest type ('interest','dividend','stock') or a description
-        const invType = ['interest','dividend','stock'].includes(note) ? note : 'stock';
-        DB.regular[mk].invest.push({type:invType, direction:amt>=0?'gain':'loss', amount:Math.abs(amt), note});
-        count++;
-      }
-    }
-    return count;
-  };
-
-  // CSV line parser handles quoted fields
-  function parseCSVLine(line, delim=',') {
-    const result=[]; let cur='', inQ=false;
-    for (let ci=0; ci<line.length; ci++) {
-      const ch=line[ci];
-      if (ch==='"') { inQ=!inQ; }
-      else if (ch===delim && !inQ) { result.push(cur.trim()); cur=''; }
-      else cur+=ch;
+  function parseCSVLine(line, delim) {
+    const result = []; let cur = '', inQ = false;
+    for (let ci = 0; ci < line.length; ci++) {
+      const ch = line[ci];
+      if (ch === '"') {
+        if (inQ && line[ci+1] === '"') { cur += '"'; ci++; } // escaped quote
+        else inQ = !inQ;
+      } else if (ch === delim && !inQ) { result.push(cur.trim()); cur = ''; }
+      else cur += ch;
     }
     result.push(cur.trim());
     return result;
   }
+
+  const tryParse = (text) => {
+    text = text.replace(/^\uFEFF/, '');
+    const firstLine = text.split('\n')[0];
+    const delim = firstLine.split(';').length > firstLine.split(',').length ? ';' : ',';
+    const lines = text.split(/\r?\n/).filter(l => l.trim());
+    if (lines.length < 2) return 0;
+
+    const h = lines[0].toLowerCase();
+    const start = (h.includes('type') || h.includes('date') || h.includes('類型') || h.includes('日期')) ? 1 : 0;
+
+    let count = 0;
+    for (let i = start; i < lines.length; i++) {
+      const row = parseCSVLine(lines[i], delim);
+      if (row.length < 3) continue;
+
+      let [type, date, amtRaw, note, cat] = row;
+      // support date-first format
+      if (/^\d{4}-\d{2}/.test(type)) { [date, type, amtRaw, note, cat] = row; }
+
+      type = (type||'').trim().toLowerCase();
+      date = (date||'').trim().replace(/\//g, '-');
+      note = (note||'').trim();
+      cat  = (cat||'').trim().toLowerCase();
+      const amt = parseFloat((amtRaw||'').replace(/,/g,''));
+
+      // ── Restore global preset name lists ──────────────────────
+      if (cat === 'preset_expense') {
+        if (note && !DB.presets.includes(note)) DB.presets.push(note);
+        count++; continue;
+      }
+      if (cat === 'preset_income') {
+        if (note && !DB.incomePresets.includes(note)) DB.incomePresets.push(note);
+        count++; continue;
+      }
+      if (cat === 'preset_interest') {
+        if (note && !DB.interestPresets.includes(note)) DB.interestPresets.push(note);
+        count++; continue;
+      }
+      if (cat === 'preset_dividend') {
+        if (note && !DB.dividendPresets.includes(note)) DB.dividendPresets.push(note);
+        count++; continue;
+      }
+
+      // ── Assets ────────────────────────────────────────────────
+      if (cat === 'asset') {
+        const y = parseInt(date.substring(0,4));
+        if (y && !isNaN(amt) && amt > 0) DB.assets[y] = amt;
+        count++; continue;
+      }
+
+      if (!date || isNaN(amt)) continue;
+      if (/^\d{4}-\d{2}$/.test(date)) date = date + '-01';
+
+      // ── Daily records ─────────────────────────────────────────
+      if (cat === 'daily' || (!cat && (type==='expense'||type==='income'||type==='支出'||type==='收入'))) {
+        if (type==='支出') type='expense';
+        if (type==='收入') type='income';
+        const dk = date.substring(0,10);
+        if (!DB.records[dk]) DB.records[dk] = [];
+        DB.records[dk].push({ id: Date.now()+'-'+i+'-'+Math.random(), amount: Math.abs(amt), note, type: (type==='income'?'income':'expense'), ts: Date.now() });
+        count++; continue;
+      }
+
+      // ── Regular expense ───────────────────────────────────────
+      if (cat === 'regular_expense') {
+        const mk = date.substring(0,7);
+        if (!DB.regular[mk])         DB.regular[mk] = {};
+        if (!DB.regular[mk].expense) DB.regular[mk].expense = {};
+        if (note) DB.regular[mk].expense[note] = Math.abs(amt);
+        count++; continue;
+      }
+
+      // ── Regular income ────────────────────────────────────────
+      if (cat === 'regular_income') {
+        const mk = date.substring(0,7);
+        if (!DB.regular[mk])               DB.regular[mk] = {};
+        if (!DB.regular[mk].incomePresets) DB.regular[mk].incomePresets = [];
+        const idx = DB.regular[mk].incomePresets.findIndex(x => x.name === note);
+        const a = Math.abs(amt);
+        if (idx >= 0) DB.regular[mk].incomePresets[idx].amount = a;
+        else          DB.regular[mk].incomePresets.push({ name: note||'薪資', amount: a });
+        count++; continue;
+      }
+
+      // ── Interest amounts ──────────────────────────────────────
+      if (cat === 'regular_interest') {
+        const mk = date.substring(0,7);
+        if (!DB.regular[mk])                  DB.regular[mk] = {};
+        if (!DB.regular[mk].interestAmounts)  DB.regular[mk].interestAmounts = {};
+        if (note) DB.regular[mk].interestAmounts[note] = Math.abs(amt);
+        // also ensure the name is in global presets
+        if (note && !DB.interestPresets.includes(note)) DB.interestPresets.push(note);
+        count++; continue;
+      }
+
+      // ── Dividend amounts ──────────────────────────────────────
+      if (cat === 'regular_dividend') {
+        const mk = date.substring(0,7);
+        if (!DB.regular[mk])                  DB.regular[mk] = {};
+        if (!DB.regular[mk].dividendAmounts)  DB.regular[mk].dividendAmounts = {};
+        if (note) DB.regular[mk].dividendAmounts[note] = Math.abs(amt);
+        if (note && !DB.dividendPresets.includes(note)) DB.dividendPresets.push(note);
+        count++; continue;
+      }
+
+      // ── Stock trades ──────────────────────────────────────────
+      if (cat === 'invest_stock' || (cat === 'invest' && (type==='stock'||type==='invest'))) {
+        const mk = date.substring(0,7);
+        if (!DB.regular[mk])        DB.regular[mk] = {};
+        if (!DB.regular[mk].invest) DB.regular[mk].invest = [];
+        DB.regular[mk].invest.push({ type:'stock', direction: amt>=0?'gain':'loss', amount: Math.abs(amt), note });
+        count++; continue;
+      }
+
+      // ── Fallback: old-style invest rows ──────────────────────
+      if (cat === 'invest') {
+        const mk = date.substring(0,7);
+        if (!DB.regular[mk])        DB.regular[mk] = {};
+        if (!DB.regular[mk].invest) DB.regular[mk].invest = [];
+        const invType = ['interest','dividend','stock'].includes(type) ? type : 'stock';
+        DB.regular[mk].invest.push({ type: invType, direction: amt>=0?'gain':'loss', amount: Math.abs(amt), note });
+        count++; continue;
+      }
+    }
+    return count;
+  };
 
   const reader = new FileReader();
   reader.onload = (e) => {
@@ -960,7 +1036,6 @@ function importCSV(input) {
       showToast('匯入失敗：' + err.message);
     }
   };
-  // Try UTF-8 first (handles BOM)
   reader.readAsText(file, 'UTF-8');
 }
 
