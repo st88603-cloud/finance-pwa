@@ -27,8 +27,6 @@ function loadData() {
     interestPresets:  JSON.parse(localStorage.getItem('interestPresets')  || '[]'),
     dividendPresets:  JSON.parse(localStorage.getItem('dividendPresets')  || '[]'),
     assets:           JSON.parse(localStorage.getItem('assets')           || '{}'),
-    sheetUrl:         localStorage.getItem('sheetUrl')                    || '',
-    portfolioCache:   JSON.parse(localStorage.getItem('portfolioCache')   || '{"rows":[],"updatedAt":""}'),
   };
 }
 function saveData(data) {
@@ -40,8 +38,6 @@ function saveData(data) {
   localStorage.setItem('interestPresets', JSON.stringify(data.interestPresets));
   localStorage.setItem('dividendPresets', JSON.stringify(data.dividendPresets));
   localStorage.setItem('assets',          JSON.stringify(data.assets));
-  localStorage.setItem('sheetUrl',        data.sheetUrl || '');
-  localStorage.setItem('portfolioCache',  JSON.stringify(data.portfolioCache || {rows:[],updatedAt:''}));
 }
 let DB = loadData();
 
@@ -164,11 +160,10 @@ function switchView(v) {
   document.querySelectorAll('.view').forEach(el => el.classList.remove('active'));
   document.getElementById('view-'+v).classList.add('active');
   document.querySelectorAll('.top-tabs button').forEach((btn,i) =>
-    btn.classList.toggle('active', ['date','month','year','portfolio'][i]===v));
-  if (v==='date')            renderCalendar();
-  else if (v==='month')      renderMonthView();
-  else if (v==='year')       renderYearView();
-  else if (v==='portfolio')  renderPortfolioView();
+    btn.classList.toggle('active', ['date','month','year'][i]===v));
+  if (v==='date')       renderCalendar();
+  else if (v==='month') renderMonthView();
+  else if (v==='year')  renderYearView();
 }
 
 // ===== CALENDAR =====
@@ -786,22 +781,7 @@ function renderSettingsBody() {
       </div>
     </div>
     <div class="settings-section">
-      <div class="settings-section-title">📊 投資配置 — Google Sheet</div>
-      <div class="settings-item" style="flex-direction:column;align-items:flex-start;gap:10px;">
-        <div style="font-size:12px;color:var(--text3);line-height:1.6">
-          在 Google Sheet 分享設定為「知道連結的人可以查看」，<br>
-          再點選 檔案 → 發布到網路 → 選擇分頁 → CSV 格式，複製連結貼到下方
-        </div>
-        <div style="display:flex;gap:8px;width:100%;align-items:center">
-          <input id="sheet-url-input" class="form-input"
-            type="url" placeholder="https://docs.google.com/spreadsheets/d/.../pub?gid=...&single=true&output=csv"
-            value="${DB.sheetUrl||''}"
-            style="flex:1;font-size:12px;padding:8px" />
-        </div>
-        <button class="btn-primary" style="margin-top:0" onclick="saveSheetUrl()">儲存網址</button>
-        ${DB.sheetUrl ? `<div style="font-size:11px;color:var(--green)">✅ 已設定網址</div>` : ''}
-      </div>
-    </div>
+      <div class="settings-section-title">期初資產設定</div>
       <div class="settings-item" style="flex-direction:column;align-items:flex-start;gap:10px;">
         <div style="font-size:12px;color:var(--text3)">設定某年度的期初資產金額（資產計算基準）</div>
         <div style="display:flex;gap:8px;width:100%">
@@ -833,24 +813,6 @@ function saveAsset() {
 function deleteAsset(y) {
   delete DB.assets[y];
   saveData(DB); renderSettingsBody(); showToast('已刪除');
-}
-function normalizeSheetUrl(url) {
-  if (!url) return '';
-  // Already a CSV export or pub URL — keep as-is
-  if (url.includes('/export?') || url.includes('/pub?')) return url;
-  // Extract spreadsheet ID and gid from edit/view URLs
-  const idMatch  = url.match(/\/spreadsheets\/d\/([a-zA-Z0-9_-]+)/);
-  const gidMatch = url.match(/[?&#]gid=(\d+)/);
-  if (!idMatch) return url; // unknown format, return unchanged
-  const id  = idMatch[1];
-  const gid = gidMatch ? gidMatch[1] : '0';
-  return `https://docs.google.com/spreadsheets/d/${id}/export?format=csv&gid=${gid}`;
-}
-function saveSheetUrl() {
-  const raw = document.getElementById('sheet-url-input')?.value.trim() || '';
-  DB.sheetUrl = normalizeSheetUrl(raw);
-  saveData(DB); renderSettingsBody();
-  showToast(DB.sheetUrl ? '✅ Google Sheet 網址已儲存' : '已清除網址');
 }
 function clearAllData() {
   if (!confirm('確定要清除所有資料？此操作無法復原。')) return;
@@ -1075,283 +1037,6 @@ function importCSV(input) {
     }
   };
   reader.readAsText(file, 'UTF-8');
-}
-
-// ===== PORTFOLIO VIEW =====
-// Colour palette for pie charts
-const PIE_COLORS = [
-  '#3a7bd5','#2d8a3e','#c96a10','#8e44ad','#1565c0',
-  '#c0392b','#16a085','#d35400','#2980b9','#7f8c8d',
-  '#27ae60','#e67e22','#8e44ad','#2c3e50','#f39c12',
-];
-
-function renderPortfolioView() {
-  const cache = DB.portfolioCache || { rows:[], updatedAt:'' };
-  const body  = document.getElementById('port-body');
-  if (!DB.sheetUrl) {
-    body.innerHTML = `<div class="port-status">⚙️ 尚未設定 Google Sheet 網址<br><small>請前往設定輸入 CSV 發布連結</small></div>`;
-    return;
-  }
-  if (!cache.rows || !cache.rows.length) {
-    body.innerHTML = `<div class="port-status">📭 尚無資料<br><small>點上方「更新資料」按鈕抓取</small></div>`;
-    return;
-  }
-  renderPortfolioContent(cache.rows, cache.updatedAt);
-}
-
-function renderPortfolioContent(rows, updatedAt) {
-  const body = document.getElementById('port-body');
-
-  const totalCost    = rows.reduce((s, r) => s + (Number(r.cost)    || 0), 0);
-  const totalCurrent = rows.reduce((s, r) => s + (Number(r.current) || 0), 0);
-  const totalGain    = totalCurrent - totalCost;
-  const gainPct      = totalCost > 0 ? (totalGain / totalCost * 100).toFixed(2) : 0;
-
-  // --- 圓餅圖1: 依項目名稱 (current value)
-  const byItem = rows.map((r,i) => ({
-    label: r.name,
-    val:   Number(r.current) || 0,
-    color: PIE_COLORS[i % PIE_COLORS.length],
-  })).filter(x => x.val > 0);
-
-  // --- 圓餅圖2: 依類別 (current value)
-  const catMap = {};
-  rows.forEach((r,i) => {
-    const cat = r.category || '其他';
-    if (!catMap[cat]) catMap[cat] = { val:0, color:'' };
-    catMap[cat].val += Number(r.current) || 0;
-  });
-  let ci = 0;
-  const byCategory = Object.entries(catMap).map(([label,obj]) => ({
-    label, val: obj.val, color: PIE_COLORS[ci++ % PIE_COLORS.length]
-  })).filter(x => x.val > 0);
-
-  body.innerHTML = `
-    ${updatedAt ? `<div class="port-last-update">最後更新：${updatedAt}</div>` : ''}
-    <div class="port-charts">
-      <div class="port-chart-card">
-        <div class="port-chart-title">依項目</div>
-        <div class="port-chart-wrap">
-          <canvas id="chart-item" width="140" height="140"></canvas>
-        </div>
-        <div class="port-legend" id="legend-item"></div>
-      </div>
-      <div class="port-chart-card">
-        <div class="port-chart-title">依類別</div>
-        <div class="port-chart-wrap">
-          <canvas id="chart-cat" width="140" height="140"></canvas>
-        </div>
-        <div class="port-legend" id="legend-cat"></div>
-      </div>
-    </div>
-    <button class="port-detail-btn" onclick="openPortDetail()">📋 查看詳細資料</button>
-    <div class="port-summary-bar">
-      <div class="port-summary-row">
-        <span class="port-summary-label">成本金額合計</span>
-        <span class="port-summary-val">${fmtMoney(totalCost)}</span>
-      </div>
-      <div class="port-summary-row">
-        <span class="port-summary-label">現價金額合計</span>
-        <span class="port-summary-val">${fmtMoney(totalCurrent)}</span>
-      </div>
-      <div class="port-summary-row">
-        <span class="port-summary-label">損益</span>
-        <span class="port-summary-val ${totalGain>=0?'gain':'loss'}">${totalGain>=0?'+':''}${fmtMoney(totalGain)} (${totalGain>=0?'+':''}${gainPct}%)</span>
-      </div>
-    </div>`;
-
-  // Draw charts after DOM is painted
-  requestAnimationFrame(() => {
-    drawPie('chart-item', 'legend-item', byItem,    totalCurrent);
-    drawPie('chart-cat',  'legend-cat',  byCategory, totalCurrent);
-  });
-}
-
-// Pure-canvas SVG-free pie chart
-function drawPie(canvasId, legendId, slices, total) {
-  const canvas = document.getElementById(canvasId);
-  if (!canvas) return;
-  const ctx  = canvas.getContext('2d');
-  const W = canvas.width, H = canvas.height;
-  const cx = W/2, cy = H/2, r = Math.min(W,H)/2 - 4;
-  ctx.clearRect(0,0,W,H);
-
-  let startAngle = -Math.PI / 2;
-  slices.forEach(s => {
-    const slice = (s.val / total) * 2 * Math.PI;
-    ctx.beginPath();
-    ctx.moveTo(cx, cy);
-    ctx.arc(cx, cy, r, startAngle, startAngle + slice);
-    ctx.closePath();
-    ctx.fillStyle = s.color;
-    ctx.fill();
-    ctx.strokeStyle = '#fff';
-    ctx.lineWidth = 1.5;
-    ctx.stroke();
-    startAngle += slice;
-  });
-
-  // Legend
-  const legend = document.getElementById(legendId);
-  if (!legend) return;
-  legend.innerHTML = slices.map(s => {
-    const pct = total > 0 ? (s.val/total*100).toFixed(1) : 0;
-    return `<div class="port-legend-item">
-      <div class="port-legend-dot" style="background:${s.color}"></div>
-      <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:70px">${s.label}</span>
-      <span class="port-legend-pct">${pct}%</span>
-    </div>`;
-  }).join('');
-}
-
-// Fetch CSV from Google Sheets — use CORS proxy to bypass browser restriction
-async function fetchPortfolioData() {
-  if (!DB.sheetUrl) {
-    showToast('請先在設定輸入 Google Sheet 網址');
-    return;
-  }
-  const btn = document.getElementById('port-update-btn');
-  if (btn) { btn.classList.add('loading'); btn.innerHTML = '⏳ 抓取中...'; }
-
-  const csvUrl = DB.sheetUrl;
-
-  // Multiple CORS proxies to try in order
-  const proxies = [
-    u => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
-    u => `https://corsproxy.io/?${encodeURIComponent(u)}`,
-    u => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(u)}`,
-  ];
-
-  let lastError = '';
-  for (const makeUrl of proxies) {
-    try {
-      const proxyUrl = makeUrl(csvUrl);
-      const res = await fetch(proxyUrl, { cache: 'no-store' });
-      if (!res.ok) { lastError = `HTTP ${res.status}`; continue; }
-      const text = await res.text();
-      if (!text || text.trim().startsWith('<')) { lastError = '回傳非 CSV 內容'; continue; }
-      const rows = parseSheetCSV(text);
-      if (!rows.length) { lastError = '找不到資料列，請確認 Sheet 欄位結構'; continue; }
-      const now = new Date().toLocaleString('zh-TW');
-      DB.portfolioCache = { rows, updatedAt: now };
-      saveData(DB);
-      renderPortfolioContent(rows, now);
-      showToast(`✅ 已更新 ${rows.length} 筆資料`);
-      if (btn) { btn.classList.remove('loading'); btn.innerHTML = '🔄 更新資料'; }
-      return; // success
-    } catch(e) {
-      lastError = e.message;
-    }
-  }
-
-  // All proxies failed
-  if (btn) { btn.classList.remove('loading'); btn.innerHTML = '🔄 更新資料'; }
-  showToast('抓取失敗，請確認網路與分享設定');
-  document.getElementById('port-body').innerHTML = `
-    <div class="port-status">
-      ❌ 抓取失敗<br>
-      <small style="color:var(--red)">${lastError}</small><br><br>
-      <div style="text-align:left;font-size:12px;color:var(--text2);line-height:1.8">
-        請確認：<br>
-        ① Google Sheet 共用設定為「知道連結的人可以<b>檢視</b>」<br>
-        ② 設定中的網址正確（貼上編輯網址即可）<br>
-        ③ 手機有網路連線<br>
-        ④ 若持續失敗，嘗試重新儲存網址後再更新
-      </div>
-    </div>`;
-}
-
-// Parse the CSV from Google Sheet
-// Expected columns: 項目名稱, 類別, 成本金額, 現價金額
-function parseSheetCSV(text) {
-  text = text.replace(/^\uFEFF/, '');
-  const lines = text.split(/\r?\n/).filter(l => l.trim());
-  if (lines.length < 2) return [];
-
-  // Parse header to find column indices (flexible)
-  function splitCSV(line) {
-    const res = []; let cur = '', inQ = false;
-    for (const ch of line) {
-      if (ch === '"') inQ = !inQ;
-      else if (ch === ',' && !inQ) { res.push(cur.trim()); cur = ''; }
-      else cur += ch;
-    }
-    res.push(cur.trim());
-    return res;
-  }
-
-  const headers = splitCSV(lines[0]).map(h => h.replace(/"/g,'').trim());
-  const idx = {
-    name:     headers.findIndex(h => /項目|名稱|name/i.test(h)),
-    category: headers.findIndex(h => /類別|category|分類/i.test(h)),
-    cost:     headers.findIndex(h => /成本|cost/i.test(h)),
-    current:  headers.findIndex(h => /現價|市值|current|market/i.test(h)),
-  };
-  // Fallback to positional (col 0,1,2,3)
-  if (idx.name     < 0) idx.name     = 0;
-  if (idx.category < 0) idx.category = 1;
-  if (idx.cost     < 0) idx.cost     = 2;
-  if (idx.current  < 0) idx.current  = 3;
-
-  const rows = [];
-  for (let i = 1; i < lines.length; i++) {
-    const cols = splitCSV(lines[i]).map(c => c.replace(/"/g,'').trim());
-    if (!cols[idx.name]) continue; // skip empty rows
-    const cost    = parseFloat((cols[idx.cost]    || '0').replace(/[,，]/g,'')) || 0;
-    const current = parseFloat((cols[idx.current] || '0').replace(/[,，]/g,'')) || 0;
-    rows.push({
-      name:     cols[idx.name]     || '',
-      category: cols[idx.category] || '其他',
-      cost,
-      current,
-    });
-  }
-  return rows;
-}
-
-function openPortDetail() {
-  const cache = DB.portfolioCache || { rows:[] };
-  const rows  = cache.rows || [];
-  const body  = document.getElementById('port-detail-body');
-
-  const totalCost    = rows.reduce((s,r) => s+(Number(r.cost)||0),    0);
-  const totalCurrent = rows.reduce((s,r) => s+(Number(r.current)||0), 0);
-
-  let html = `<div style="overflow-x:auto">
-    <table class="port-detail-table">
-      <thead><tr>
-        <th>項目</th><th>類別</th><th style="text-align:right">成本</th><th style="text-align:right">現價</th><th style="text-align:right">損益%</th>
-      </tr></thead><tbody>`;
-
-  for (const r of rows) {
-    const costPct    = totalCost    > 0 ? (r.cost    / totalCost    * 100).toFixed(1) : 0;
-    const currentPct = totalCurrent > 0 ? (r.current / totalCurrent * 100).toFixed(1) : 0;
-    const gain       = r.current - r.cost;
-    const gainPct    = r.cost > 0 ? (gain / r.cost * 100).toFixed(1) : 0;
-    html += `<tr>
-      <td>${r.name}</td>
-      <td style="text-align:center"><span class="cat-badge">${r.category}</span></td>
-      <td>${fmtMoney(r.cost)}<br><small style="color:var(--text3)">${costPct}%</small></td>
-      <td>${fmtMoney(r.current)}<br><small style="color:var(--text3)">${currentPct}%</small></td>
-      <td class="${gain>=0?'gain':'loss'}">${gain>=0?'+':''}${gainPct}%</td>
-    </tr>`;
-  }
-
-  html += `</tbody>
-    <tfoot><tr style="font-weight:700">
-      <td colspan="2" style="font-family:var(--font);font-size:12px;color:var(--text)">合計</td>
-      <td>${fmtMoney(totalCost)}</td>
-      <td>${fmtMoney(totalCurrent)}</td>
-      <td class="${totalCurrent-totalCost>=0?'gain':'loss'}">${totalCost>0?(((totalCurrent-totalCost)/totalCost)*100).toFixed(1):0}%</td>
-    </tr></tfoot>
-  </table></div>`;
-
-  body.innerHTML = html;
-  document.getElementById('port-detail-modal').style.display = 'flex';
-}
-function closePortDetailModal(e) {
-  if (!e || e.target === document.getElementById('port-detail-modal'))
-    document.getElementById('port-detail-modal').style.display = 'none';
 }
 
 // ===== INIT =====
