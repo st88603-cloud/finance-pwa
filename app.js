@@ -1204,7 +1204,7 @@ function drawPie(canvasId, legendId, slices, total) {
   }).join('');
 }
 
-// Fetch CSV from Google Sheets — use CORS proxy to bypass browser restriction
+// Fetch CSV from Google Sheets — use CORS proxy with cache-busting to prevent stale proxy cache
 async function fetchPortfolioData() {
   if (!DB.sheetUrl) {
     showToast('請先在設定輸入 Google Sheet 網址');
@@ -1213,11 +1213,12 @@ async function fetchPortfolioData() {
   const btn = document.getElementById('port-update-btn');
   if (btn) { btn.classList.add('loading'); btn.innerHTML = '⏳ 抓取中...'; }
 
-  const csvUrl = DB.sheetUrl;
+  // Add timestamp to bust both browser cache AND proxy cache
+  const ts     = Date.now();
+  const csvUrl = DB.sheetUrl + (DB.sheetUrl.includes('?') ? '&' : '?') + '_t=' + ts;
 
-  // Multiple CORS proxies to try in order
   const proxies = [
-    u => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
+    u => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}&_t=${ts}`,
     u => `https://corsproxy.io/?${encodeURIComponent(u)}`,
     u => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(u)}`,
   ];
@@ -1226,7 +1227,10 @@ async function fetchPortfolioData() {
   for (const makeUrl of proxies) {
     try {
       const proxyUrl = makeUrl(csvUrl);
-      const res = await fetch(proxyUrl, { cache: 'no-store' });
+      const res = await fetch(proxyUrl, {
+        cache: 'no-store',
+        headers: { 'Cache-Control': 'no-cache, no-store', 'Pragma': 'no-cache' }
+      });
       if (!res.ok) { lastError = `HTTP ${res.status}`; continue; }
       const text = await res.text();
       if (!text || text.trim().startsWith('<')) { lastError = '回傳非 CSV 內容'; continue; }
@@ -1238,7 +1242,7 @@ async function fetchPortfolioData() {
       renderPortfolioContent(rows, now);
       showToast(`✅ 已更新 ${rows.length} 筆資料`);
       if (btn) { btn.classList.remove('loading'); btn.innerHTML = '🔄 更新資料'; }
-      return; // success
+      return;
     } catch(e) {
       lastError = e.message;
     }
@@ -1259,6 +1263,14 @@ async function fetchPortfolioData() {
         ④ 若持續失敗，嘗試重新儲存網址後再更新
       </div>
     </div>`;
+}
+
+function clearPortfolioCache() {
+  if (!confirm('確定要清空配置資料？清空後需重新按「更新資料」才能顯示。')) return;
+  DB.portfolioCache = { rows: [], updatedAt: '' };
+  saveData(DB);
+  renderPortfolioView();
+  showToast('已清空配置資料');
 }
 
 // Parse the CSV from Google Sheet
