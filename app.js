@@ -11,14 +11,17 @@ let pendingRecordType = 'expense';
 
 // ===== DATA STRUCTURE =====
 // records[YYYY-MM-DD]   = [{id, amount, note, type:'expense'|'income', ts}]
-// regular[YYYY-MM]      = { expense:{name:amount}, incomePresets:[{name,amount}], invest:[{type,direction,amount,note}] }
-// presets               = ['聯邦信用卡',...]   global expense preset names
-// incomePresets         = ['薪資',...]          global income preset names
+// regular[YYYY-MM]      = { expense:{name:amount}, incomePresets:[{name,amount}], invest:[...] }
+// manualYears[year]     = { income, expense, balance, investTotal, asset }
+//                         any field can be null/undefined = "not set"
+//                         if manualYears[year] exists, getYearData/getAsset use it directly (no calculation)
+// presets / incomePresets / interestPresets / dividendPresets = global preset name arrays
 // dayColors[YYYY-MM-DD] = 'green'|'blue'|'yellow'
-// assets[year]          = number
+// sheetUrl / portfolioCache
 
 function loadData() {
-  return {
+  // Load raw data
+  const raw = {
     records:          JSON.parse(localStorage.getItem('records')          || '{}'),
     regular:          JSON.parse(localStorage.getItem('regular')          || '{}'),
     dayColors:        JSON.parse(localStorage.getItem('dayColors')        || '{}'),
@@ -26,10 +29,19 @@ function loadData() {
     incomePresets:    JSON.parse(localStorage.getItem('incomePresets')    || '["薪資"]'),
     interestPresets:  JSON.parse(localStorage.getItem('interestPresets')  || '[]'),
     dividendPresets:  JSON.parse(localStorage.getItem('dividendPresets')  || '[]'),
-    assets:           JSON.parse(localStorage.getItem('assets')           || '{}'),
+    manualYears:      JSON.parse(localStorage.getItem('manualYears')      || '{}'),
     sheetUrl:         localStorage.getItem('sheetUrl')                    || '',
     portfolioCache:   JSON.parse(localStorage.getItem('portfolioCache')   || '{"rows":[],"updatedAt":""}'),
   };
+  // ── Migrate old DB.assets → manualYears (one-time, non-destructive) ──
+  const oldAssets = JSON.parse(localStorage.getItem('assets') || '{}');
+  for (const [y, v] of Object.entries(oldAssets)) {
+    const yr = parseInt(y);
+    if (!raw.manualYears[yr]) raw.manualYears[yr] = {};
+    // Only migrate asset value if not already set by manualYears
+    if (raw.manualYears[yr].asset === undefined) raw.manualYears[yr].asset = v;
+  }
+  return raw;
 }
 function saveData(data) {
   localStorage.setItem('records',         JSON.stringify(data.records));
@@ -39,9 +51,15 @@ function saveData(data) {
   localStorage.setItem('incomePresets',   JSON.stringify(data.incomePresets));
   localStorage.setItem('interestPresets', JSON.stringify(data.interestPresets));
   localStorage.setItem('dividendPresets', JSON.stringify(data.dividendPresets));
-  localStorage.setItem('assets',          JSON.stringify(data.assets));
+  localStorage.setItem('manualYears',     JSON.stringify(data.manualYears));
   localStorage.setItem('sheetUrl',        data.sheetUrl || '');
   localStorage.setItem('portfolioCache',  JSON.stringify(data.portfolioCache || {rows:[],updatedAt:''}));
+  // Keep old assets key in sync for backward compat (other devices not yet updated)
+  const assetCompat = {};
+  for (const [y, d] of Object.entries(data.manualYears)) {
+    if (d.asset !== undefined && d.asset !== null) assetCompat[y] = d.asset;
+  }
+  localStorage.setItem('assets', JSON.stringify(assetCompat));
 }
 let DB = loadData();
 
@@ -114,9 +132,22 @@ function getMonthData(year, month) {
 }
 
 function getYearData(year) {
+  // ── Method A: manual override ──────────────────────────────────
+  const m = DB.manualYears[year];
+  if (m && (m.income!==undefined||m.expense!==undefined||m.balance!==undefined||m.investTotal!==undefined)) {
+    // Fill any missing fields with 0; reconstruct totalIncome
+    const income      = Number(m.income)      || 0;
+    const expense     = Number(m.expense)     || 0;
+    const investTotal = Number(m.investTotal) || 0;
+    const balance     = m.balance !== undefined ? Number(m.balance) : (income + investTotal - expense);
+    const totalIncome = income + investTotal;
+    return { income, expense, balance, investTotal, totalIncome,
+             interest:0, dividend:0, stockGain:0, _manual:true };
+  }
+  // ── Method B: calculate from daily/monthly records ─────────────
   let totIncome=0, totExpense=0, totInterest=0, totDividend=0, totStock=0;
-  for (let m=0; m<12; m++) {
-    const md = getMonthData(year, m);
+  for (let mo=0; mo<12; mo++) {
+    const md = getMonthData(year, mo);
     totIncome   += md.income;
     totExpense  += md.expense;
     totInterest += md.interest;
@@ -130,30 +161,46 @@ function getYearData(year) {
 }
 
 function getAsset(year) {
-  const years = Object.keys(DB.assets).map(Number).sort();
-  if (!years.length) {
-    let a=0, min=Math.min(...getAllRecordYears(), year);
-    for (let y=min; y<=year; y++) a += getYearData(y).balance;
+  // If manualYears[year] has an explicit asset value, use it directly
+  if (DB.manualYears[year]?.asset !== undefined && DB.manualYears[year].asset !== null)
+    return Number(DB.manualYears[year].asset);
+
+  // Otherwise find the nearest anchor year ≤ target year
+  // An anchor is any year in manualYears that has an explicit asset value
+  const anchorYears = Object.keys(DB.manualYears)
+    .map(Number)
+    .filter(y => DB.manualYears[y]?.asset !== undefined && DB.manualYears[y].asset !== null)
+    .sort((a,b) => a-b);
+
+  const bases = anchorYears.filter(y => y <= year);
+
+  if (!bases.length) {
+    // No anchor at all — sum from earliest known year
+    const min = Math.min(...getAllRecordYears(), year);
+    let a = 0;
+    for (let y = min; y <= year; y++) a += getYearData(y).balance;
     return a;
   }
-  const bases = years.filter(y => y<=year);
-  if (!bases.length) {
-    let a=0, min=Math.min(years[0], year);
-    for (let y=min; y<=year; y++) {
-      if (DB.assets[y]!==undefined) { a=DB.assets[y]; continue; }
+
+  // Start from the nearest anchor and accumulate non-manual balance years
+  const baseYear = Math.max(...bases);
+  let a = Number(DB.manualYears[baseYear].asset);
+  for (let y = baseYear + 1; y <= year; y++) {
+    // If this year also has an explicit asset, jump to it
+    if (DB.manualYears[y]?.asset !== undefined && DB.manualYears[y].asset !== null) {
+      a = Number(DB.manualYears[y].asset);
+    } else {
       a += getYearData(y).balance;
     }
-    return a;
   }
-  let a = DB.assets[Math.max(...bases)];
-  for (let y=Math.max(...bases)+1; y<=year; y++) a += getYearData(y).balance;
   return a;
 }
 
 function getAllRecordYears() {
   const s = new Set();
-  for (const k of Object.keys(DB.records))  s.add(parseInt(k.split('-')[0]));
-  for (const k of Object.keys(DB.regular))  s.add(parseInt(k.split('-')[0]));
+  for (const k of Object.keys(DB.records))     s.add(parseInt(k.split('-')[0]));
+  for (const k of Object.keys(DB.regular))     s.add(parseInt(k.split('-')[0]));
+  for (const k of Object.keys(DB.manualYears)) s.add(parseInt(k));
   if (!s.size) s.add(currentYear);
   return [...s].sort();
 }
@@ -731,30 +778,299 @@ function closeMonthDetailModal(e) {
 
 // ===== YEAR VIEW =====
 function renderYearView() {
-  const years=getAllRecordYears();
-  document.getElementById('year-table').innerHTML=`
+  const years = getAllRecordYears();
+  const tableEl = document.getElementById('year-table');
+
+  // Build IRR list for average
+  const irrList = [];
+
+  let tableHtml = `
     <thead><tr>
       <th>年份</th><th>年收入</th><th>年度開銷</th><th>年度剩餘</th><th>資產</th><th>年投資報酬</th><th>IRR</th>
-    </tr></thead><tbody id="year-table-body"></tbody>`;
+    </tr></thead><tbody>`;
 
-  let html='';
   for (const y of years) {
-    const yd    =getYearData(y);
-    const asset =getAsset(y);
-    const base  =asset-yd.investTotal;
-    const irr   =base>0?(yd.investTotal/base*100).toFixed(2):0;
-    // Change 1: fmtMoney now handles negative prefix
-    html+=`<tr>
-      <td>${y}</td>
+    const yd    = getYearData(y);
+    const asset = getAsset(y);
+    const base  = asset - yd.investTotal;
+    const irr   = base > 0 ? (yd.investTotal / base * 100) : 0;
+    irrList.push(irr);
+    const isManual = !!DB.manualYears[y]?._manual || (
+      DB.manualYears[y] && (DB.manualYears[y].income !== undefined || DB.manualYears[y].expense !== undefined)
+    );
+    const manualTag = isManual
+      ? `<span style="font-size:9px;background:var(--blue-bg);color:var(--invest-blue);padding:1px 4px;border-radius:4px;margin-left:4px">手動</span>`
+      : '';
+    tableHtml += `<tr>
+      <td>${y}${manualTag}</td>
       <td style="color:var(--green)">${fmtMoney(yd.totalIncome)}</td>
       <td>${fmtMoney(yd.expense)}</td>
       <td style="color:${yd.balance<0?'var(--red)':'var(--green)'}">${fmtMoney(yd.balance)}</td>
       <td style="color:var(--invest-blue)">${fmtMoney(asset)}</td>
       <td style="color:${yd.investTotal<0?'var(--red)':'var(--invest-blue)'}">${fmtMoney(yd.investTotal)}</td>
-      <td>${irr}%</td>
+      <td>${irr.toFixed(2)}%</td>
     </tr>`;
   }
-  document.getElementById('year-table-body').innerHTML=html;
+  tableHtml += `</tbody>`;
+  tableEl.innerHTML = tableHtml;
+
+  // IRR average below table
+  const avgIrr = irrList.length ? (irrList.reduce((s,v)=>s+v,0) / irrList.length).toFixed(2) : 0;
+  const existingMeta = document.getElementById('year-meta');
+  if (existingMeta) existingMeta.remove();
+  const meta = document.createElement('div');
+  meta.id = 'year-meta';
+  meta.style.cssText = 'padding:10px 12px 4px;font-size:12px;color:var(--text2);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px';
+  meta.innerHTML = `
+    <span>歷年 IRR 平均：<b style="color:var(--invest-blue);font-family:var(--mono)">${avgIrr}%</b></span>
+    <button onclick="openAssetChart()" style="padding:7px 14px;background:var(--accent);color:#fff;border:none;border-radius:var(--radius-sm);font-family:var(--font);font-size:12px;font-weight:700;cursor:pointer">📈 資產線圖</button>`;
+  tableEl.parentElement.insertBefore(meta, tableEl);
+
+  // Manual year input form
+  const existingForm = document.getElementById('manual-year-form');
+  if (existingForm) existingForm.remove();
+  const form = document.createElement('div');
+  form.id = 'manual-year-form';
+  form.style.cssText = 'margin:10px 12px 16px;background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:14px;box-shadow:0 1px 4px rgba(0,0,0,.06)';
+  form.innerHTML = `
+    <div style="font-size:12px;font-weight:700;color:var(--text3);letter-spacing:.5px;text-transform:uppercase;margin-bottom:10px">＋ 手動輸入歷史年份資料</div>
+    <div style="font-size:11px;color:var(--text3);margin-bottom:10px">直接輸入過往年度總和，填入的年份不再從日期/月份計算，優先以此資料為準</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
+      <div>
+        <div style="font-size:10px;color:var(--text3);margin-bottom:3px">年份 *</div>
+        <input id="my-year"   class="form-input" type="number" placeholder="2022" style="padding:8px;font-size:14px"/>
+      </div>
+      <div>
+        <div style="font-size:10px;color:var(--text3);margin-bottom:3px">資產（期末）</div>
+        <input id="my-asset"  class="form-input" type="number" placeholder="NT$" style="padding:8px;font-size:14px"/>
+      </div>
+      <div>
+        <div style="font-size:10px;color:var(--text3);margin-bottom:3px">年收入</div>
+        <input id="my-income" class="form-input" type="number" placeholder="NT$" style="padding:8px;font-size:14px"/>
+      </div>
+      <div>
+        <div style="font-size:10px;color:var(--text3);margin-bottom:3px">年度開銷</div>
+        <input id="my-expense" class="form-input" type="number" placeholder="NT$" style="padding:8px;font-size:14px"/>
+      </div>
+      <div>
+        <div style="font-size:10px;color:var(--text3);margin-bottom:3px">年度剩餘存款</div>
+        <input id="my-balance" class="form-input" type="number" placeholder="NT$（可留空自動計算）" style="padding:8px;font-size:13px"/>
+      </div>
+      <div>
+        <div style="font-size:10px;color:var(--text3);margin-bottom:3px">年總投資報酬</div>
+        <input id="my-invest"  class="form-input" type="number" placeholder="NT$" style="padding:8px;font-size:14px"/>
+      </div>
+    </div>
+    <div style="display:flex;gap:8px">
+      <button class="btn-primary" style="margin-top:0;flex:1" onclick="saveManualYear()">儲存年份資料</button>
+      <button onclick="openDeleteManualYear()" style="padding:10px 14px;background:var(--red-bg);border:1px solid var(--red);color:var(--red);border-radius:var(--radius-sm);font-family:var(--font);font-size:13px;cursor:pointer">刪除</button>
+    </div>
+    <div id="manual-year-list" style="margin-top:10px"></div>`;
+  tableEl.parentElement.appendChild(form);
+  renderManualYearList();
+}
+
+function renderManualYearList() {
+  const el = document.getElementById('manual-year-list');
+  if (!el) return;
+  const entries = Object.entries(DB.manualYears).sort(([a],[b])=>a-b);
+  if (!entries.length) { el.innerHTML=''; return; }
+  el.innerHTML = `<div style="font-size:10px;color:var(--text3);margin-bottom:6px;text-transform:uppercase;letter-spacing:.4px">已儲存的手動年份</div>` +
+    entries.map(([y,d])=>{
+      const parts = [];
+      if (d.income    !== undefined) parts.push(`收入 ${fmtMoney(d.income)}`);
+      if (d.expense   !== undefined) parts.push(`開銷 ${fmtMoney(d.expense)}`);
+      if (d.asset     !== undefined) parts.push(`資產 ${fmtMoney(d.asset)}`);
+      if (d.investTotal!==undefined) parts.push(`投資 ${fmtMoney(d.investTotal)}`);
+      return `<div style="display:flex;align-items:center;gap:6px;padding:6px 0;border-bottom:1px solid var(--border)">
+        <b style="font-size:13px;color:var(--accent);min-width:40px">${y}</b>
+        <span style="flex:1;font-size:11px;color:var(--text2)">${parts.join('　')}</span>
+        <button class="btn-sm danger" onclick="deleteManualYear(${y})" style="font-size:10px;padding:3px 8px">✕</button>
+      </div>`;
+    }).join('');
+}
+
+function saveManualYear() {
+  const y = parseInt(document.getElementById('my-year')?.value);
+  if (!y || y < 1900 || y > 2100) { showToast('請輸入有效年份'); return; }
+  const income      = parseInput('my-income');
+  const expense     = parseInput('my-expense');
+  const balance     = parseInput('my-balance');
+  const investTotal = parseInput('my-invest');
+  const asset       = parseInput('my-asset');
+  if (income===null && expense===null && asset===null && investTotal===null) {
+    showToast('請至少填入一個欄位'); return;
+  }
+  if (!DB.manualYears[y]) DB.manualYears[y] = {};
+  if (income      !== null) DB.manualYears[y].income      = income;
+  if (expense     !== null) DB.manualYears[y].expense     = expense;
+  if (balance     !== null) DB.manualYears[y].balance     = balance;
+  if (investTotal !== null) DB.manualYears[y].investTotal = investTotal;
+  if (asset       !== null) DB.manualYears[y].asset       = asset;
+  // Mark as manual override so getYearData knows to use it
+  DB.manualYears[y]._manual = true;
+  saveData(DB);
+  // Clear inputs
+  ['my-year','my-income','my-expense','my-balance','my-invest','my-asset'].forEach(id=>{
+    const el=document.getElementById(id); if(el) el.value='';
+  });
+  renderYearView();
+  showToast(`✅ ${y} 年資料已儲存`);
+}
+
+function parseInput(id) {
+  const el = document.getElementById(id);
+  if (!el || el.value.trim() === '') return null;
+  const v = parseFloat(el.value);
+  return isNaN(v) ? null : v;
+}
+
+function deleteManualYear(y) {
+  if (!confirm(`確定刪除 ${y} 年的手動資料？`)) return;
+  delete DB.manualYears[y];
+  saveData(DB); renderYearView(); showToast('已刪除');
+}
+function openDeleteManualYear() {
+  const y = parseInt(document.getElementById('my-year')?.value);
+  if (!y || !DB.manualYears[y]) { showToast('請先輸入要刪除的年份'); return; }
+  deleteManualYear(y);
+}
+
+// ── Asset line chart ─────────────────────────────────────────────
+function openAssetChart() {
+  const years = getAllRecordYears();
+  const data  = years.map(y => ({ y, asset: getAsset(y), irr: (() => {
+    const yd = getYearData(y);
+    const base = getAsset(y) - yd.investTotal;
+    return base > 0 ? (yd.investTotal / base * 100) : 0;
+  })() }));
+  const avgIrr = data.length ? (data.reduce((s,d)=>s+d.irr,0)/data.length).toFixed(2) : 0;
+
+  const body = document.getElementById('asset-chart-body');
+  body.innerHTML = `
+    <div style="font-size:12px;color:var(--text2);margin-bottom:10px;text-align:center">
+      歷年 IRR 平均：<b style="color:var(--invest-blue);font-family:var(--mono);font-size:15px">${avgIrr}%</b>
+    </div>
+    <div style="overflow-x:auto">
+      <canvas id="asset-line-canvas" height="220"></canvas>
+    </div>
+    <div id="asset-chart-legend" style="margin-top:12px;display:flex;flex-wrap:wrap;gap:8px;justify-content:center"></div>`;
+
+  document.getElementById('asset-chart-modal').style.display = 'flex';
+
+  requestAnimationFrame(() => {
+    const canvas = document.getElementById('asset-line-canvas');
+    if (!canvas) return;
+    // Size canvas to container width
+    const containerW = canvas.parentElement.clientWidth - 8;
+    canvas.width  = Math.max(containerW, years.length * 48);
+    canvas.height = 220;
+    drawAssetLine(canvas, data);
+
+    // Legend: each year's IRR
+    const legend = document.getElementById('asset-chart-legend');
+    legend.innerHTML = data.map(d =>
+      `<div style="font-size:10px;color:var(--text3);text-align:center">
+        <b style="color:var(--text)">${d.y}</b><br>
+        <span style="font-family:var(--mono);color:var(--invest-blue)">${d.irr.toFixed(1)}%</span>
+      </div>`
+    ).join('');
+  });
+}
+
+function drawAssetLine(canvas, data) {
+  if (!data.length) return;
+  const ctx  = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height;
+  const PAD = { top:24, right:16, bottom:36, left:70 };
+  const chartW = W - PAD.left - PAD.right;
+  const chartH = H - PAD.top  - PAD.bottom;
+
+  const assets = data.map(d => d.asset);
+  const minA   = Math.min(...assets) * 0.92;
+  const maxA   = Math.max(...assets) * 1.05;
+  const yScale = v => PAD.top + chartH - ((v - minA) / (maxA - minA)) * chartH;
+  const xScale = i => PAD.left + (i / (data.length - 1 || 1)) * chartW;
+
+  ctx.clearRect(0, 0, W, H);
+
+  // Grid lines
+  const gridCount = 4;
+  ctx.strokeStyle = '#e0dbd4';
+  ctx.lineWidth   = 1;
+  for (let i = 0; i <= gridCount; i++) {
+    const v = minA + (maxA - minA) * (i / gridCount);
+    const y = yScale(v);
+    ctx.beginPath(); ctx.moveTo(PAD.left, y); ctx.lineTo(W - PAD.right, y); ctx.stroke();
+    // Y-axis label
+    ctx.fillStyle = '#a09488';
+    ctx.font = '9px DM Mono, monospace';
+    ctx.textAlign = 'right';
+    ctx.fillText(formatMillions(v), PAD.left - 4, y + 3);
+  }
+
+  // X-axis labels
+  ctx.fillStyle = '#6b6259';
+  ctx.font = '10px Noto Sans TC, sans-serif';
+  ctx.textAlign = 'center';
+  data.forEach((d, i) => {
+    ctx.fillText(String(d.y), xScale(i), H - 8);
+  });
+
+  // Line + area fill
+  ctx.beginPath();
+  data.forEach((d, i) => {
+    const x = xScale(i), y = yScale(d.asset);
+    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+  });
+  // Area under line
+  const grad = ctx.createLinearGradient(0, PAD.top, 0, H - PAD.bottom);
+  grad.addColorStop(0, 'rgba(58,123,213,0.18)');
+  grad.addColorStop(1, 'rgba(58,123,213,0.02)');
+  ctx.lineTo(xScale(data.length-1), H - PAD.bottom);
+  ctx.lineTo(xScale(0), H - PAD.bottom);
+  ctx.closePath();
+  ctx.fillStyle = grad;
+  ctx.fill();
+
+  // Draw line on top
+  ctx.beginPath();
+  data.forEach((d, i) => {
+    const x = xScale(i), y = yScale(d.asset);
+    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+  });
+  ctx.strokeStyle = '#3a7bd5';
+  ctx.lineWidth   = 2.5;
+  ctx.lineJoin    = 'round';
+  ctx.stroke();
+
+  // Data points + value labels
+  data.forEach((d, i) => {
+    const x = xScale(i), y = yScale(d.asset);
+    ctx.beginPath();
+    ctx.arc(x, y, 4, 0, Math.PI * 2);
+    ctx.fillStyle   = '#3a7bd5';
+    ctx.fill();
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth   = 1.5;
+    ctx.stroke();
+    // Value above point
+    ctx.fillStyle  = '#2c2820';
+    ctx.font       = '9px DM Mono, monospace';
+    ctx.textAlign  = 'center';
+    ctx.fillText(formatMillions(d.asset), x, y - 8);
+  });
+}
+
+function formatMillions(v) {
+  if (Math.abs(v) >= 1e6) return (v/1e6).toFixed(1) + 'M';
+  if (Math.abs(v) >= 1e3) return (v/1e3).toFixed(0) + 'k';
+  return String(Math.round(v));
+}
+
+function closeAssetChartModal(e) {
+  if (!e || e.target === document.getElementById('asset-chart-modal'))
+    document.getElementById('asset-chart-modal').style.display = 'none';
 }
 
 // ===== SETTINGS =====
@@ -802,18 +1118,9 @@ function renderSettingsBody() {
         ${DB.sheetUrl ? `<div style="font-size:11px;color:var(--green)">✅ 已設定網址</div>` : ''}
       </div>
     </div>
-      <div class="settings-item" style="flex-direction:column;align-items:flex-start;gap:10px;">
-        <div style="font-size:12px;color:var(--text3)">設定某年度的期初資產金額（資產計算基準）</div>
-        <div style="display:flex;gap:8px;width:100%">
-          <input id="asset-year" class="form-input" type="number" placeholder="年份" style="width:90px;font-size:14px;padding:8px"/>
-          <input id="asset-val"  class="form-input" type="number" placeholder="金額" style="flex:1;font-size:14px;padding:8px"/>
-          <button class="btn-sm add" onclick="saveAsset()">設定</button>
-        </div>
-        ${Object.entries(DB.assets).sort().map(([y,v])=>`
-          <div style="display:flex;align-items:center;gap:8px;width:100%">
-            <div style="flex:1;font-size:13px;color:var(--text2)">${y}年：<span style="font-family:var(--mono);font-weight:600">${fmtMoney(v)}</span></div>
-            <button class="btn-sm danger" onclick="deleteAsset(${y})" style="padding:4px 10px;font-size:11px">刪除</button>
-          </div>`).join('')}
+      <div class="settings-item" style="flex-direction:column;align-items:flex-start;gap:6px;cursor:default">
+        <div style="font-size:13px;color:var(--text)">📅 手動輸入歷史年份 / 期初資產</div>
+        <div style="font-size:11px;color:var(--text3)">請切換到「年份」頁面，在下方表單輸入歷史資料或期初資產設定</div>
       </div>
     </div>
     <div class="settings-section">
@@ -823,16 +1130,6 @@ function renderSettingsBody() {
         <span class="settings-item-arrow">›</span>
       </div>
     </div>`;
-}
-function saveAsset() {
-  const y=parseInt(document.getElementById('asset-year')?.value);
-  const v=parseFloat(document.getElementById('asset-val')?.value);
-  if (!y||!v) { showToast('請輸入年份和金額'); return; }
-  DB.assets[y]=v; saveData(DB); renderSettingsBody(); showToast('已設定');
-}
-function deleteAsset(y) {
-  delete DB.assets[y];
-  saveData(DB); renderSettingsBody(); showToast('已刪除');
 }
 function normalizeSheetUrl(url) {
   if (!url) return '';
@@ -869,9 +1166,17 @@ function exportCSV() {
   for (const name of DB.dividendPresets)
     csv += `preset,0000-01-01,0,"${name}",preset_dividend\n`;
 
-  // ── Assets ──
-  for (const [y, v] of Object.entries(DB.assets))
-    csv += `asset,${y}-01-01,${v},"",asset\n`;
+  // ── Manual year summaries ──
+  for (const [y, d] of Object.entries(DB.manualYears)) {
+    const fields = [
+      d.income      !== undefined ? d.income      : '',
+      d.expense     !== undefined ? d.expense     : '',
+      d.balance     !== undefined ? d.balance     : '',
+      d.investTotal !== undefined ? d.investTotal : '',
+      d.asset       !== undefined ? d.asset       : '',
+    ];
+    csv += `manual_year,${y}-01-01,0,"${fields.join('|')}",manual_year\n`;
+  }
 
   // ── Daily records ──
   for (const [date, recs] of Object.entries(DB.records))
@@ -975,10 +1280,29 @@ function importCSV(input) {
         count++; continue;
       }
 
-      // ── Assets ────────────────────────────────────────────────
+      // ── Manual year summaries (new format) ───────────────────
+      if (cat === 'manual_year') {
+        const yr = parseInt(date.substring(0,4));
+        if (!yr) continue;
+        if (!DB.manualYears[yr]) DB.manualYears[yr] = {};
+        const parts = note.split('|');
+        const setIfVal = (key, v) => { if (v!==''&&v!==undefined&&!isNaN(parseFloat(v))) DB.manualYears[yr][key]=parseFloat(v); };
+        setIfVal('income',      parts[0]);
+        setIfVal('expense',     parts[1]);
+        setIfVal('balance',     parts[2]);
+        setIfVal('investTotal', parts[3]);
+        setIfVal('asset',       parts[4]);
+        DB.manualYears[yr]._manual = true;
+        count++; continue;
+      }
+
+      // ── Assets (old format, backward compat) ────────────────
       if (cat === 'asset') {
-        const y = parseInt(date.substring(0,4));
-        if (y && !isNaN(amt) && amt > 0) DB.assets[y] = amt;
+        const yr = parseInt(date.substring(0,4));
+        if (yr && !isNaN(amt) && amt > 0) {
+          if (!DB.manualYears[yr]) DB.manualYears[yr] = {};
+          if (DB.manualYears[yr].asset === undefined) DB.manualYears[yr].asset = amt;
+        }
         count++; continue;
       }
 
