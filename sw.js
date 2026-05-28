@@ -1,4 +1,4 @@
-const CACHE_NAME = 'kaiji-v1.9';
+const CACHE_NAME = 'kaiji-v2.0';
 const ASSETS = [
   './',
   './index.html',

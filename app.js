@@ -780,8 +780,6 @@ function closeMonthDetailModal(e) {
 function renderYearView() {
   const years = getAllRecordYears();
   const tableEl = document.getElementById('year-table');
-
-  // Build IRR list for average
   const irrList = [];
 
   let tableHtml = `
@@ -795,14 +793,8 @@ function renderYearView() {
     const base  = asset - yd.investTotal;
     const irr   = base > 0 ? (yd.investTotal / base * 100) : 0;
     irrList.push(irr);
-    const isManual = !!DB.manualYears[y]?._manual || (
-      DB.manualYears[y] && (DB.manualYears[y].income !== undefined || DB.manualYears[y].expense !== undefined)
-    );
-    const manualTag = isManual
-      ? `<span style="font-size:9px;background:var(--blue-bg);color:var(--invest-blue);padding:1px 4px;border-radius:4px;margin-left:4px">手動</span>`
-      : '';
     tableHtml += `<tr>
-      <td>${y}${manualTag}</td>
+      <td>${y}</td>
       <td style="color:var(--green)">${fmtMoney(yd.totalIncome)}</td>
       <td>${fmtMoney(yd.expense)}</td>
       <td style="color:${yd.balance<0?'var(--red)':'var(--green)'}">${fmtMoney(yd.balance)}</td>
@@ -814,77 +806,90 @@ function renderYearView() {
   tableHtml += `</tbody>`;
   tableEl.innerHTML = tableHtml;
 
-  // IRR average below table
-  const avgIrr = irrList.length ? (irrList.reduce((s,v)=>s+v,0) / irrList.length).toFixed(2) : 0;
+  // IRR average + buttons bar below table
+  const avgIrr = irrList.length ? (irrList.reduce((s,v)=>s+v,0)/irrList.length).toFixed(2) : 0;
   const existingMeta = document.getElementById('year-meta');
   if (existingMeta) existingMeta.remove();
   const meta = document.createElement('div');
   meta.id = 'year-meta';
-  meta.style.cssText = 'padding:10px 12px 4px;font-size:12px;color:var(--text2);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px';
+  meta.style.cssText = 'padding:10px 12px 16px;font-size:12px;color:var(--text2);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px';
   meta.innerHTML = `
-    <span>歷年 IRR 平均：<b style="color:var(--invest-blue);font-family:var(--mono)">${avgIrr}%</b></span>
-    <button onclick="openAssetChart()" style="padding:7px 14px;background:var(--accent);color:#fff;border:none;border-radius:var(--radius-sm);font-family:var(--font);font-size:12px;font-weight:700;cursor:pointer">📈 資產線圖</button>`;
-  tableEl.parentElement.insertBefore(meta, tableEl);
+    <span style="font-size:12px">歷年 IRR 平均：<b style="color:var(--invest-blue);font-family:var(--mono);font-size:14px">${avgIrr}%</b></span>
+    <div style="display:flex;gap:8px">
+      <button onclick="openManualYearModal()" style="padding:8px 14px;background:var(--bg3);border:1px solid var(--border);color:var(--text2);border-radius:var(--radius-sm);font-family:var(--font);font-size:12px;font-weight:600;cursor:pointer">✏️ 輸入歷史資料</button>
+      <button onclick="openAssetChart()" style="padding:8px 14px;background:var(--accent);color:#fff;border:none;border-radius:var(--radius-sm);font-family:var(--font);font-size:12px;font-weight:700;cursor:pointer">📈 資產線圖</button>
+    </div>`;
+  tableEl.parentElement.appendChild(meta);
+}
 
-  // Manual year input form
-  const existingForm = document.getElementById('manual-year-form');
-  if (existingForm) existingForm.remove();
-  const form = document.createElement('div');
-  form.id = 'manual-year-form';
-  form.style.cssText = 'margin:10px 12px 16px;background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:14px;box-shadow:0 1px 4px rgba(0,0,0,.06)';
-  form.innerHTML = `
-    <div style="font-size:12px;font-weight:700;color:var(--text3);letter-spacing:.5px;text-transform:uppercase;margin-bottom:10px">＋ 手動輸入歷史年份資料</div>
-    <div style="font-size:11px;color:var(--text3);margin-bottom:10px">直接輸入過往年度總和，填入的年份不再從日期/月份計算，優先以此資料為準</div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
+function openManualYearModal() {
+  renderManualYearModalBody();
+  document.getElementById('manual-year-modal').style.display = 'flex';
+}
+function closeManualYearModal(e) {
+  if (!e || e.target === document.getElementById('manual-year-modal')) {
+    document.getElementById('manual-year-modal').style.display = 'none';
+    renderYearView(); // refresh table after edits
+  }
+}
+function renderManualYearModalBody() {
+  const body = document.getElementById('manual-year-modal-body');
+  body.innerHTML = `
+    <div style="font-size:11px;color:var(--text3);margin-bottom:12px;line-height:1.6">
+      直接輸入過往年度總和，填入的年份優先以此資料為準，不從日期/月份計算
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">
       <div>
         <div style="font-size:10px;color:var(--text3);margin-bottom:3px">年份 *</div>
-        <input id="my-year"   class="form-input" type="number" placeholder="2022" style="padding:8px;font-size:14px"/>
+        <input id="my-year"    class="form-input" type="number" placeholder="2022" style="padding:8px;font-size:14px"/>
       </div>
       <div>
         <div style="font-size:10px;color:var(--text3);margin-bottom:3px">資產（期末）</div>
-        <input id="my-asset"  class="form-input" type="number" placeholder="NT$" style="padding:8px;font-size:14px"/>
+        <input id="my-asset"   class="form-input" type="number" placeholder="NT$" style="padding:8px;font-size:14px"/>
       </div>
       <div>
         <div style="font-size:10px;color:var(--text3);margin-bottom:3px">年收入</div>
-        <input id="my-income" class="form-input" type="number" placeholder="NT$" style="padding:8px;font-size:14px"/>
+        <input id="my-income"  class="form-input" type="number" placeholder="NT$" style="padding:8px;font-size:14px"/>
       </div>
       <div>
         <div style="font-size:10px;color:var(--text3);margin-bottom:3px">年度開銷</div>
         <input id="my-expense" class="form-input" type="number" placeholder="NT$" style="padding:8px;font-size:14px"/>
       </div>
       <div>
-        <div style="font-size:10px;color:var(--text3);margin-bottom:3px">年度剩餘存款</div>
-        <input id="my-balance" class="form-input" type="number" placeholder="NT$（可留空自動計算）" style="padding:8px;font-size:13px"/>
+        <div style="font-size:10px;color:var(--text3);margin-bottom:3px">年度剩餘（可留空）</div>
+        <input id="my-balance" class="form-input" type="number" placeholder="空白=自動計算" style="padding:8px;font-size:13px"/>
       </div>
       <div>
         <div style="font-size:10px;color:var(--text3);margin-bottom:3px">年總投資報酬</div>
         <input id="my-invest"  class="form-input" type="number" placeholder="NT$" style="padding:8px;font-size:14px"/>
       </div>
     </div>
-    <div style="display:flex;gap:8px">
-      <button class="btn-primary" style="margin-top:0;flex:1" onclick="saveManualYear()">儲存年份資料</button>
-      <button onclick="openDeleteManualYear()" style="padding:10px 14px;background:var(--red-bg);border:1px solid var(--red);color:var(--red);border-radius:var(--radius-sm);font-family:var(--font);font-size:13px;cursor:pointer">刪除</button>
+    <div style="display:flex;gap:8px;margin-bottom:16px">
+      <button class="btn-primary" style="margin-top:0;flex:1" onclick="saveManualYear()">儲存</button>
+      <button onclick="openDeleteManualYear()" style="padding:10px 14px;background:var(--red-bg);border:1px solid var(--red);color:var(--red);border-radius:var(--radius-sm);font-family:var(--font);font-size:13px;cursor:pointer">刪除年份</button>
     </div>
+    <div class="divider"></div>
     <div id="manual-year-list" style="margin-top:10px"></div>`;
-  tableEl.parentElement.appendChild(form);
   renderManualYearList();
 }
 
 function renderManualYearList() {
   const el = document.getElementById('manual-year-list');
   if (!el) return;
-  const entries = Object.entries(DB.manualYears).sort(([a],[b])=>a-b);
-  if (!entries.length) { el.innerHTML=''; return; }
-  el.innerHTML = `<div style="font-size:10px;color:var(--text3);margin-bottom:6px;text-transform:uppercase;letter-spacing:.4px">已儲存的手動年份</div>` +
-    entries.map(([y,d])=>{
+  const entries = Object.entries(DB.manualYears)
+    .filter(([,d]) => d._manual || d.asset!==undefined || d.income!==undefined)
+    .sort(([a],[b]) => a - b);
+  if (!entries.length) { el.innerHTML = '<div style="font-size:12px;color:var(--text3);padding:8px 0">尚無手動資料</div>'; return; }
+  el.innerHTML = `<div style="font-size:10px;color:var(--text3);margin-bottom:8px;text-transform:uppercase;letter-spacing:.4px">已儲存年份</div>` +
+    entries.map(([y, d]) => {
       const parts = [];
-      if (d.income    !== undefined) parts.push(`收入 ${fmtMoney(d.income)}`);
-      if (d.expense   !== undefined) parts.push(`開銷 ${fmtMoney(d.expense)}`);
-      if (d.asset     !== undefined) parts.push(`資產 ${fmtMoney(d.asset)}`);
-      if (d.investTotal!==undefined) parts.push(`投資 ${fmtMoney(d.investTotal)}`);
-      return `<div style="display:flex;align-items:center;gap:6px;padding:6px 0;border-bottom:1px solid var(--border)">
-        <b style="font-size:13px;color:var(--accent);min-width:40px">${y}</b>
-        <span style="flex:1;font-size:11px;color:var(--text2)">${parts.join('　')}</span>
+      if (d.income      !== undefined) parts.push(`收入 ${fmtMoney(d.income)}`);
+      if (d.expense     !== undefined) parts.push(`開銷 ${fmtMoney(d.expense)}`);
+      if (d.asset       !== undefined) parts.push(`資產 ${fmtMoney(d.asset)}`);
+      if (d.investTotal !== undefined) parts.push(`投資 ${fmtMoney(d.investTotal)}`);
+      return `<div style="display:flex;align-items:center;gap:6px;padding:7px 0;border-bottom:1px solid var(--border)">
+        <b style="font-size:14px;color:var(--accent);min-width:44px">${y}</b>
+        <span style="flex:1;font-size:10px;color:var(--text2);line-height:1.5">${parts.join('<br>')}</span>
         <button class="btn-sm danger" onclick="deleteManualYear(${y})" style="font-size:10px;padding:3px 8px">✕</button>
       </div>`;
     }).join('');
@@ -907,28 +912,20 @@ function saveManualYear() {
   if (balance     !== null) DB.manualYears[y].balance     = balance;
   if (investTotal !== null) DB.manualYears[y].investTotal = investTotal;
   if (asset       !== null) DB.manualYears[y].asset       = asset;
-  // Mark as manual override so getYearData knows to use it
   DB.manualYears[y]._manual = true;
   saveData(DB);
-  // Clear inputs
-  ['my-year','my-income','my-expense','my-balance','my-invest','my-asset'].forEach(id=>{
-    const el=document.getElementById(id); if(el) el.value='';
-  });
-  renderYearView();
+  ['my-year','my-income','my-expense','my-balance','my-invest','my-asset']
+    .forEach(id => { const el=document.getElementById(id); if(el) el.value=''; });
+  renderManualYearList();
   showToast(`✅ ${y} 年資料已儲存`);
-}
-
-function parseInput(id) {
-  const el = document.getElementById(id);
-  if (!el || el.value.trim() === '') return null;
-  const v = parseFloat(el.value);
-  return isNaN(v) ? null : v;
 }
 
 function deleteManualYear(y) {
   if (!confirm(`確定刪除 ${y} 年的手動資料？`)) return;
   delete DB.manualYears[y];
-  saveData(DB); renderYearView(); showToast('已刪除');
+  saveData(DB);
+  renderManualYearList();
+  showToast('已刪除');
 }
 function openDeleteManualYear() {
   const y = parseInt(document.getElementById('my-year')?.value);
@@ -961,10 +958,12 @@ function openAssetChart() {
   requestAnimationFrame(() => {
     const canvas = document.getElementById('asset-line-canvas');
     if (!canvas) return;
-    // Size canvas to container width
     const containerW = canvas.parentElement.clientWidth - 8;
-    canvas.width  = Math.max(containerW, years.length * 48);
-    canvas.height = 220;
+    // Set logical CSS size (drawAssetLine will apply DPR internally)
+    const logW = Math.max(containerW, years.length * 52);
+    const logH = 220;
+    canvas.width  = logW;
+    canvas.height = logH;
     drawAssetLine(canvas, data);
 
     // Legend: each year's IRR
@@ -980,65 +979,65 @@ function openAssetChart() {
 
 function drawAssetLine(canvas, data) {
   if (!data.length) return;
-  const ctx  = canvas.getContext('2d');
-  const W = canvas.width, H = canvas.height;
-  const PAD = { top:24, right:16, bottom:36, left:70 };
+  const dpr  = window.devicePixelRatio || 1;
+  const W    = canvas.width;
+  const H    = canvas.height;
+  // Scale canvas buffer for retina/high-DPI — keeps CSS size the same
+  canvas.width  = W * dpr;
+  canvas.height = H * dpr;
+  canvas.style.width  = W + 'px';
+  canvas.style.height = H + 'px';
+
+  const ctx = canvas.getContext('2d');
+  ctx.scale(dpr, dpr);
+
+  const PAD    = { top:28, right:18, bottom:38, left:72 };
   const chartW = W - PAD.left - PAD.right;
   const chartH = H - PAD.top  - PAD.bottom;
 
   const assets = data.map(d => d.asset);
   const minA   = Math.min(...assets) * 0.92;
-  const maxA   = Math.max(...assets) * 1.05;
-  const yScale = v => PAD.top + chartH - ((v - minA) / (maxA - minA)) * chartH;
-  const xScale = i => PAD.left + (i / (data.length - 1 || 1)) * chartW;
+  const maxA   = Math.max(...assets) * 1.06;
+  const yScale = v => PAD.top + chartH - ((v - minA) / (maxA - minA || 1)) * chartH;
+  const xScale = i => PAD.left + (data.length > 1 ? (i / (data.length - 1)) * chartW : chartW / 2);
 
   ctx.clearRect(0, 0, W, H);
 
-  // Grid lines
+  // Grid lines + Y labels
   const gridCount = 4;
-  ctx.strokeStyle = '#e0dbd4';
-  ctx.lineWidth   = 1;
   for (let i = 0; i <= gridCount; i++) {
     const v = minA + (maxA - minA) * (i / gridCount);
     const y = yScale(v);
+    ctx.strokeStyle = '#e0dbd4';
+    ctx.lineWidth   = 1;
     ctx.beginPath(); ctx.moveTo(PAD.left, y); ctx.lineTo(W - PAD.right, y); ctx.stroke();
-    // Y-axis label
-    ctx.fillStyle = '#a09488';
-    ctx.font = '9px DM Mono, monospace';
-    ctx.textAlign = 'right';
-    ctx.fillText(formatMillions(v), PAD.left - 4, y + 3);
+    ctx.fillStyle  = '#a09488';
+    ctx.font       = `${10 * 1}px "DM Mono", monospace`;
+    ctx.textAlign  = 'right';
+    ctx.fillText(formatMillions(v), PAD.left - 5, y + 3.5);
   }
 
-  // X-axis labels
-  ctx.fillStyle = '#6b6259';
-  ctx.font = '10px Noto Sans TC, sans-serif';
-  ctx.textAlign = 'center';
-  data.forEach((d, i) => {
-    ctx.fillText(String(d.y), xScale(i), H - 8);
-  });
+  // X labels
+  ctx.fillStyle  = '#6b6259';
+  ctx.font       = `${11}px "Noto Sans TC", sans-serif`;
+  ctx.textAlign  = 'center';
+  data.forEach((d, i) => ctx.fillText(String(d.y), xScale(i), H - 10));
 
-  // Line + area fill
-  ctx.beginPath();
-  data.forEach((d, i) => {
-    const x = xScale(i), y = yScale(d.asset);
-    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
-  });
   // Area under line
-  const grad = ctx.createLinearGradient(0, PAD.top, 0, H - PAD.bottom);
-  grad.addColorStop(0, 'rgba(58,123,213,0.18)');
-  grad.addColorStop(1, 'rgba(58,123,213,0.02)');
+  ctx.beginPath();
+  data.forEach((d, i) => { const x=xScale(i),y=yScale(d.asset); i===0?ctx.moveTo(x,y):ctx.lineTo(x,y); });
   ctx.lineTo(xScale(data.length-1), H - PAD.bottom);
-  ctx.lineTo(xScale(0), H - PAD.bottom);
+  ctx.lineTo(xScale(0),             H - PAD.bottom);
   ctx.closePath();
+  const grad = ctx.createLinearGradient(0, PAD.top, 0, H - PAD.bottom);
+  grad.addColorStop(0, 'rgba(58,123,213,0.20)');
+  grad.addColorStop(1, 'rgba(58,123,213,0.02)');
   ctx.fillStyle = grad;
   ctx.fill();
 
-  // Draw line on top
+  // Line
   ctx.beginPath();
-  data.forEach((d, i) => {
-    const x = xScale(i), y = yScale(d.asset);
-    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
-  });
+  data.forEach((d, i) => { const x=xScale(i),y=yScale(d.asset); i===0?ctx.moveTo(x,y):ctx.lineTo(x,y); });
   ctx.strokeStyle = '#3a7bd5';
   ctx.lineWidth   = 2.5;
   ctx.lineJoin    = 'round';
@@ -1047,18 +1046,19 @@ function drawAssetLine(canvas, data) {
   // Data points + value labels
   data.forEach((d, i) => {
     const x = xScale(i), y = yScale(d.asset);
+    // Dot
     ctx.beginPath();
-    ctx.arc(x, y, 4, 0, Math.PI * 2);
+    ctx.arc(x, y, 4.5, 0, Math.PI * 2);
     ctx.fillStyle   = '#3a7bd5';
     ctx.fill();
     ctx.strokeStyle = '#fff';
     ctx.lineWidth   = 1.5;
     ctx.stroke();
-    // Value above point
-    ctx.fillStyle  = '#2c2820';
-    ctx.font       = '9px DM Mono, monospace';
-    ctx.textAlign  = 'center';
-    ctx.fillText(formatMillions(d.asset), x, y - 8);
+    // Value label above dot
+    ctx.fillStyle = '#2c2820';
+    ctx.font      = `${10}px "DM Mono", monospace`;
+    ctx.textAlign = 'center';
+    ctx.fillText(formatMillions(d.asset), x, y - 10);
   });
 }
 
