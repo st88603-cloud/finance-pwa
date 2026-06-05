@@ -106,21 +106,29 @@
     /* ===== MONTH VIEW ===== */
     .month-year-header { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; background: var(--bg2); border-bottom: 1px solid var(--border); flex-shrink: 0; }
     .month-year-title { font-size: 18px; font-weight: 700; }
-    .months-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 10px; padding: 12px; }
-    .month-card { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 10px; cursor: pointer; transition: all .15s; text-align: center; box-shadow: 0 1px 4px rgba(0,0,0,0.06); }
-    .month-card:active { background: var(--bg3); transform: scale(.97); }
-    .month-card.current-month { border-color: var(--accent); background: linear-gradient(135deg,#eff8ff,#fff); }
-    .month-card-label { font-size: 13px; font-weight: 700; color: var(--text2); margin-bottom: 5px; }
-    .month-card-balance { font-size: 13px; font-family: var(--mono); font-weight: 700; }
-    .month-invest-badge { font-size: 9px; font-family: var(--mono); color: var(--invest-blue); margin-top: 3px; opacity: .8; }
-    .month-year-summary { margin: 0 12px 16px; background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px; box-shadow: 0 1px 4px rgba(0,0,0,0.06); }
-    .summary-title { font-size: 13px; color: var(--text); font-weight: 700; letter-spacing: .5px; margin-bottom: 12px; }
-    .summary-section-label { font-size: 10px; font-weight: 700; color: var(--text3); letter-spacing: .8px; text-transform: uppercase; margin-bottom: 8px; padding-bottom: 4px; border-bottom: 1px solid var(--border); }
-    .summary-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 4px; }
-    .summary-row { display: flex; flex-direction: column; background: var(--bg3); border-radius: var(--radius-sm); padding: 8px 10px; }
-    .summary-row-label { font-size: 10px; color: var(--text3); margin-bottom: 4px; line-height: 1.3; }
-    .summary-row-val { font-size: 13px; font-family: var(--mono); font-weight: 700; }
-    .ratio-badge { display: inline-block; background: var(--bg4); border-radius: 8px; padding: 1px 5px; font-size: 9px; font-family: var(--mono); color: var(--text3); font-weight: 400; vertical-align: middle; }
+    /* ===== MONTH VIEW ===== */
+    .months-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; padding:10px 10px 4px; }
+    .month-card { background:var(--bg2); border:1px solid var(--border); border-radius:12px; padding:10px 8px 8px; cursor:pointer; transition:all .15s; text-align:center; box-shadow:0 1px 4px rgba(0,0,0,.05); display:flex; flex-direction:column; align-items:center; gap:3px; }
+    .month-card:active { transform:scale(.96); background:var(--bg3); }
+    .month-card.current-month { border-color:var(--accent); box-shadow:0 0 0 2px rgba(58,123,213,.15); }
+    .mc-icon { line-height:0; }
+    .mc-balance { font-size:12px; font-family:var(--mono); font-weight:700; line-height:1.2; }
+    .mc-invest  { font-size:9px;  font-family:var(--mono); color:var(--invest-blue); opacity:.8; }
+
+    /* Year summary */
+    .month-year-summary { margin:6px 10px 14px; background:#ede9e3; border:1px solid #d4cdc4; border-radius:var(--radius); padding:14px 12px; box-shadow:0 1px 4px rgba(0,0,0,.06); }
+    .summary-title { font-size:14px; font-weight:700; color:var(--text); margin-bottom:12px; }
+    .sum-grid { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+    .sum-card { background:#ffffff; border-radius:10px; padding:10px 10px; border:1px solid #e8e2da; }
+    .sum-card-inner { display:flex; align-items:center; gap:10px; }
+    .sum-card-content { display:flex; flex-direction:column; gap:2px; flex:1; min-width:0; }
+    .sum-card-label { font-size:10px; color:var(--text3); line-height:1.3; }
+    .sum-card-val { font-size:13px; font-family:var(--mono); font-weight:700; line-height:1.3; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .sum-card-val.red { color:#b03020; }
+    .sum-icon-circle { width:36px; height:36px; border-radius:50%; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+    .sum-icon-svg { width:18px; height:18px; display:flex; align-items:center; justify-content:center; }
+    .sum-icon-svg svg { width:18px; height:18px; fill:currentColor; }
+    .ratio-badge { display:inline-block; background:rgba(0,0,0,.06); border-radius:8px; padding:1px 5px; font-size:9px; font-family:var(--mono); color:var(--text3); font-weight:400; vertical-align:middle; }
 
     /* ===== YEAR VIEW ===== */
     .year-view-inner { padding: 12px; }
@@ -279,6 +287,23 @@
     .gain { color:var(--green); } .loss { color:var(--red); }
     .port-last-update { font-size:10px; color:var(--text3); text-align:right; padding:4px 0 8px; }
 
+    /* ===== YEAR VIEW CARDS ===== */
+    .yr-card { background:var(--bg2); border:1px solid var(--border); border-radius:var(--radius); margin-bottom:8px; overflow:hidden; box-shadow:0 1px 4px rgba(0,0,0,.05); }
+    .yr-main { display:flex; align-items:center; gap:6px; padding:11px 12px; cursor:pointer; transition:background .15s; }
+    .yr-main:active { background:var(--bg3); }
+    .yr-main-year { font-size:15px; font-weight:800; color:var(--accent); min-width:38px; font-family:var(--font); }
+    .yr-main-col { flex:1; display:flex; flex-direction:column; align-items:flex-end; gap:1px; }
+    .yr-col-label { font-size:9px; color:var(--text3); letter-spacing:.2px; white-space:nowrap; }
+    .yr-col-val { font-size:11px; font-family:var(--mono); font-weight:700; white-space:nowrap; }
+    .yr-chevron { font-size:11px; color:var(--text3); transition:transform .2s; margin-left:2px; flex-shrink:0; }
+    .yr-detail { background:var(--bg3); border-top:1px solid var(--border); padding:10px 12px; }
+    .yr-detail-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:6px; }
+    .yr-detail-item { display:flex; flex-direction:column; gap:2px; }
+
+    /* ===== PORTFOLIO chart centre fix ===== */
+    .port-chart-card { background:var(--bg2); border:1px solid var(--border); border-radius:var(--radius); padding:12px 8px; box-shadow:0 1px 4px rgba(0,0,0,.06); display:flex; flex-direction:column; align-items:center; }
+    .port-chart-title { font-size:11px; font-weight:700; color:var(--text3); text-align:center; margin-bottom:8px; letter-spacing:.4px; text-transform:uppercase; }
+    .port-chart-wrap { display:flex; justify-content:center; align-items:center; }
     .section-note { font-size: 11px; color: var(--text3); margin-bottom: 8px; }
     .invest-group-label { font-size: 11px; font-weight: 700; color: var(--invest-blue); letter-spacing: .4px; padding: 6px 0 4px; border-bottom: 1px solid var(--border); margin-bottom: 6px; margin-top: 4px; }
     .invest-add-panel { background: var(--bg3); border-radius: var(--radius-sm); padding: 12px; margin-bottom: 12px; }

@@ -673,76 +673,184 @@ function closeRegModal(e) {
   }
 }
 
-// ===== MONTH VIEW (Change 6: beautified layout + colours) =====
+// ===== MONTH VIEW =====
+// SVG icons (inline, reused across cards)
+const ICON_EXPENSE = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12,9.256c-1.654,0-3,1.346-3,3s1.346,3,3,3,3-1.346,3-3-1.346-3-3-3Zm0,5c-1.103,0-2-.897-2-2s.897-2,2-2,2,.897,2,2-.897,2-2,2Zm10.11,.609c-.304-.094-1.315-.433-2.48-1.065,.988-.948,1.898-2.176,2.635-3.958,.525-1.269,.158-2.698-.915-3.557l-4.622-3.701c-.641-.512-1.471-.7-2.276-.518-.789,.179-1.438,.689-1.781,1.401-.462,.957-.984,1.708-1.544,2.343-.893-1.244-1.57-2.558-1.992-3.921-.355-1.148-1.346-1.89-2.523-1.89H2C.897,0,0,.897,0,2c0,.872,.564,1.607,1.344,1.88-.217,.32-.344,.705-.344,1.12,0,.872,.564,1.607,1.344,1.88-.217,.32-.344,.705-.344,1.12,0,1.103,.897,2,2,2h1.332c-1.204,.885-2.376,2.014-3.419,3.775-.767,1.296-.453,2.934,.746,3.894l4.671,3.74c.481,.386,1.08,.591,1.692,.591,.157,0,.314-.014,.471-.041,.734-.128,1.372-.554,1.75-1.168,.84-1.367,1.782-2.31,2.756-3.069v2.278c0,1.103,.897,2,2,2,.414,0,.8-.127,1.12-.344,.273,.78,1.009,1.344,1.88,1.344,.414,0,.8-.127,1.12-.344,.273,.78,1.009,1.344,1.88,1.344,1.103,0,2-.897,2-2v-4.611c0-1.178-.742-2.168-1.89-2.523ZM4,9c-.551,0-1-.449-1-1s.449-1,1-1h1.5c.276,0,.5-.224,.5-.5s-.224-.5-.5-.5H3c-.551,0-1-.449-1-1s.449-1,1-1h1.5c.276,0,.5-.224,.5-.5s-.224-.5-.5-.5H2c-.551,0-1-.449-1-1s.449-1,1-1H6.611c.741,0,1.342,.455,1.568,1.186,.471,1.52,1.23,2.98,2.238,4.354-.911,.835-1.904,1.443-2.929,2.063-.217,.131-.434,.263-.652,.397h-2.836Zm6.392,11.268c-.231,.376-.611,.627-1.069,.707-.489,.084-.986-.042-1.367-.346l-4.671-3.74c-.807-.646-1.021-1.741-.511-2.604,1.533-2.59,3.414-3.728,5.232-4.827,2.002-1.211,4.073-2.463,5.565-5.555,.21-.436,.611-.749,1.102-.86,.508-.115,1.03,.002,1.431,.322l4.622,3.701c.722,.579,.97,1.541,.616,2.394-1.386,3.35-3.382,4.557-5.495,5.834-1.877,1.135-3.817,2.308-5.455,4.973Zm12.608,1.732c0,.551-.448,1-1,1s-1-.449-1-1v-2.5c0-.276-.224-.5-.5-.5s-.5,.224-.5,.5v1.5c0,.551-.448,1-1,1s-1-.449-1-1v-2.5c0-.276-.224-.5-.5-.5s-.5,.224-.5,.5v1.5c0,.551-.448,1-1,1s-1-.449-1-1v-2.999c.454-.3,.911-.578,1.364-.851,.827-.5,1.664-1.01,2.469-1.65,1.377,.792,2.626,1.21,2.982,1.32,.731,.227,1.186,.827,1.186,1.568v4.611Z"/></svg>`;
+const ICON_INCOME  = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m23.181,9.655c-.496-.452-1.141-.674-1.809-.652-.67.032-1.288.322-1.739.818l-3.732,4.102c-.314-1.108-1.335-1.922-2.543-1.922h-.261c.559-.582.903-1.37.903-2.237,0-2.777-2.082-5.598-4.487-6.481.467-.317.958-.749,1.3-1.312.243-.4.25-.884.019-1.296-.233-.416-.673-.673-1.146-.673h-3.371c-.474,0-.913.258-1.146.673-.231.412-.225.896.019,1.296.342.563.833.995,1.3,1.312-2.405.883-4.487,3.704-4.487,6.481,0,.889.362,1.696.946,2.281-1.668.266-2.946,1.715-2.946,3.456v5c0,1.93,1.57,3.5,3.5,3.5h5.965c2.707,0,5.292-1.159,7.093-3.181l6.806-7.639c.911-1.022.829-2.604-.183-3.526ZM6.04,1.45c-.073-.121-.031-.231,0-.287.021-.039.105-.164.275-.164h3.371c.17,0,.254.125.275.164.03.055.072.166,0,.287-.521.855-1.562,1.35-1.96,1.514-.398-.165-1.439-.659-1.96-1.514Zm1.96,2.55c2.43,0,5,2.962,5,5.763,0,1.234-1.01,2.237-2.25,2.237h-5.5c-1.24,0-2.25-1.003-2.25-2.237,0-2.801,2.57-5.763,5-5.763Zm14.617,8.516l-6.806,7.639c-1.611,1.809-3.925,2.846-6.347,2.846H3.5c-1.379,0-2.5-1.122-2.5-2.5v-5c0-1.378,1.121-2.5,2.5-2.5h9.857c.905,0,1.643.737,1.643,1.642,0,.812-.606,1.511-1.398,1.624l-6.161.737c-.274.033-.47.282-.437.556.032.274.282.464.556.437l6.173-.739c1.021-.146,1.844-.878,2.145-1.824l4.496-4.94c.271-.298.643-.473,1.046-.492.398-.018.789.12,1.088.393.609.555.658,1.506.11,2.122Z"/></svg>`;
+const ICON_BALANCE = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19,12c0,.552-.448,1-1,1s-1-.448-1-1,.448-1,1-1,1,.448,1,1Zm5,.5v3c0,.827-.673,1.5-1.5,1.5h-.213c-.853,1.846-2.389,3.278-4.287,3.997v.503c0,1.379-1.122,2.5-2.5,2.5-1.208,0-2.217-.86-2.45-2h-3.101c-.232,1.14-1.242,2-2.45,2-1.378,0-2.5-1.121-2.5-2.5v-.502C1.688,19.748-.336,16.469,.046,12.897c.134-1.248,.589-2.408,1.279-3.408-.819-.551-1.325-1.479-1.325-2.489,0-1.654,1.346-3,3-3,.276,0,.5,.224,.5,.5s-.224,.5-.5,.5c-1.103,0-2,.897-2,2,0,.7,.364,1.341,.948,1.702,1.486-1.652,3.679-2.702,6.065-2.702h7.118c.343-1.285,1.326-2.303,2.811-2.893,.465-.184,.99-.127,1.402,.153,.411,.279,.657,.743,.657,1.241v3.124c1.121,.873,1.994,2.054,2.497,3.374h.003c.603,0,1.5,.399,1.5,1.5Zm-1,0c0-.401-.273-.494-.504-.5h-.353c-.216,0-.408-.14-.476-.345-.437-1.342-1.312-2.54-2.461-3.375-.13-.094-.207-.244-.207-.404v-3.374c0-.169-.08-.319-.219-.414-.141-.096-.314-.112-.471-.051-.923,.366-2.068,1.107-2.282,2.551-.038,.251-.248,.427-.51,.427l-7.505-.015c-3.549,0-6.612,2.637-6.973,6.003-.344,3.22,1.553,6.166,4.615,7.165,.206,.067,.345,.259,.345,.476v.856c0,.827,.673,1.5,1.5,1.5s1.5-.673,1.5-1.5c0-.276,.224-.5,.5-.5h4c.276,0,.5,.224,.5,.5,0,.827,.673,1.5,1.5,1.5s1.5-.673,1.5-1.5v-.856c0-.217,.139-.408,.345-.476,1.885-.614,3.398-2.021,4.152-3.857,.077-.188,.26-.311,.462-.311h.541c.276,0,.5-.225,.5-.5v-3ZM6.5,4.5c.276,0,.5-.224,.5-.5,0-1.654,1.346-3,3-3s3,1.346,3,3c0,.276,.224,.5,.5,.5s.5-.224,.5-.5c0-2.206-1.794-4-4-4S6,1.794,6,4c0,.276,.224,.5,.5,.5Z"/></svg>`;
+const ICON_INVEST  = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13.83,5.268c1.11-.592,2.461-1.581,3.06-3.087,.193-.486,.133-1.018-.166-1.458-.307-.453-.815-.724-1.36-.724h-6.728c-.544,0-1.053,.271-1.36,.724-.299,.44-.359,.972-.167,1.458,.599,1.506,1.95,2.495,3.06,3.087C5.238,6.62,1,13.094,1,18.25c0,3.17,2.58,5.75,5.75,5.75h10.5c3.17,0,5.75-2.58,5.75-5.75,0-5.156-4.238-11.63-9.17-12.982ZM8.039,1.812c-.094-.236,0-.432,.064-.526,.121-.179,.32-.285,.533-.285h6.728c.212,0,.412,.106,.533,.285,.064,.095,.158,.29,.064,.527-.788,1.982-3.337,2.952-3.961,3.163-.625-.21-3.169-1.174-3.96-3.164Zm9.211,21.188H6.75c-2.619,0-4.75-2.131-4.75-4.75,0-5.349,4.849-12.25,10-12.25s10,6.901,10,12.25c0,2.619-2.131,4.75-4.75,4.75Zm-1.25-5.626c0,1.448-1.178,2.626-2.626,2.626h-.874v1.5c0,.276-.224,.5-.5,.5s-.5-.224-.5-.5v-1.5h-.926c-.979,0-1.891-.526-2.381-1.374-.139-.239-.057-.545,.182-.683,.239-.14,.544-.057,.683,.182,.312,.54,.894,.875,1.516,.875h2.8c.896,0,1.626-.729,1.626-1.626,0-.803-.575-1.478-1.368-1.605l-3.422-.55c-1.28-.206-2.209-1.296-2.209-2.593,0-1.448,1.178-2.626,2.626-2.626h.874v-1.5c0-.276,.224-.5,.5-.5s.5,.224,.5,.5v1.5h.926c.978,0,1.891,.527,2.381,1.375,.139,.239,.057,.545-.182,.683-.241,.138-.544,.056-.683-.182-.312-.54-.894-.875-1.516-.875h-2.8c-.896,0-1.626,.729-1.626,1.626,0,.803,.575,1.478,1.368,1.605l3.422,.55c1.28,.206,2.209,1.296,2.209,2.593Z"/></svg>`;
+const ICON_INTEREST= `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="m17.477 6c-3.72 0-6.524 1.29-6.524 3v6.294c-1.053-.792-2.851-1.294-4.976-1.294-3.407 0-5.977 1.29-5.977 3v4c0 1.71 2.569 3 5.977 3 2.534 0 4.603-.715 5.497-1.785.976 1.07 3.235 1.785 6.003 1.785 3.719 0 6.523-1.29 6.523-3v-12c0-1.71-2.805-3-6.523-3zm5.523 11c0 .944-2.362 2-5.523 2s-5.524-1.056-5.524-2v-2.364c1.134.832 3.139 1.364 5.524 1.364s4.389-.532 5.523-1.364zm0-4c0 .944-2.362 2-5.523 2s-5.524-1.056-5.524-2v-2.364c1.134.832 3.139 1.364 5.524 1.364s4.389-.532 5.523-1.364zm-5.523-6c3.161 0 5.523 1.056 5.523 2s-2.362 2-5.523 2-5.524-1.056-5.524-2 2.362-2 5.524-2zm-11.5 8c2.933 0 4.976 1.054 4.976 2s-2.043 2-4.976 2c-2.849 0-4.977-1.056-4.977-2s2.128-2 4.977-2zm0 8c-2.849 0-4.977-1.056-4.977-2v-2.294c1.053.792 2.852 1.294 4.977 1.294s3.922-.502 4.976-1.294v2.294c0 .946-2.043 2-4.976 2zm11.5 0c-3.162 0-5.524-1.056-5.524-2v-2.364c1.134.832 3.139 1.364 5.524 1.364s4.389-.532 5.523-1.364v2.364c0 .944-2.362 2-5.523 2zm-12.351-16.499c.125 0 .24-.002.344-.006l.03 4.009c.002.275.226.496.5.496h.004c.276-.002.498-.228.496-.504l-.03-4.004c.12.005.252.009.404.009 1.085 0 2.894-.17 3.925-1.202.974-.973 1.19-2.621 1.201-3.832.004-.393-.147-.763-.425-1.041-.278-.278-.659-.425-1.041-.426-1.211.011-2.858.228-3.833 1.201-.303.303-.529.675-.701 1.074-.172-.399-.398-.771-.701-1.074-.975-.973-2.622-1.19-3.833-1.201-.398-.008-.764.148-1.041.426-.277.278-.429.648-.425 1.041.011 1.211.228 2.859 1.201 3.832 1.031 1.031 2.84 1.202 3.925 1.202zm2.282-4.593c.773-.773 2.296-.901 3.134-.908h.004c.122 0 .236.047.321.133.087.086.134.202.133.325-.007.839-.135 2.361-.908 3.134-.832.832-2.603.946-3.587.903-.006-.139-.005-.299-.006-.448.01-1.004.188-2.418.909-3.139zm-6.275-.775c.085-.086.199-.133.321-.133h.004c.838.007 2.36.135 3.134.908.725.725.902 2.164.909 3.171-.001.139 0 .29-.006.415-.982.043-2.754-.07-3.586-.903-.773-.773-.901-2.295-.908-3.134 0-.123.046-.239.133-.325z"/></svg>`;
+const ICON_STOCK   = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13.83,5.268c1.11-.592,2.461-1.581,3.06-3.087,.193-.486,.133-1.018-.166-1.458-.307-.453-.815-.724-1.36-.724h-6.728c-.544,0-1.053,.271-1.36,.724-.299,.44-.359,.972-.167,1.458,.599,1.506,1.95,2.495,3.06,3.087C5.238,6.62,1,13.094,1,18.25c0,3.17,2.58,5.75,5.75,5.75h10.5c3.17,0,5.75-2.58,5.75-5.75,0-5.156-4.238-11.63-9.17-12.982ZM8.039,1.812c-.094-.236,0-.432,.064-.526,.121-.179,.32-.285,.533-.285h6.728c.212,0,.412,.106,.533,.285,.064,.095,.158,.29,.064,.527-.788,1.982-3.337,2.952-3.961,3.163-.625-.21-3.169-1.174-3.96-3.164Zm9.211,21.188H6.75c-2.619,0-4.75-2.131-4.75-4.75,0-5.349,4.849-12.25,10-12.25s10,6.901,10,12.25c0,2.619-2.131,4.75-4.75,4.75Zm-1.25-5.626c0,1.448-1.178,2.626-2.626,2.626h-.874v1.5c0,.276-.224,.5-.5,.5s-.5-.224-.5-.5v-1.5h-.926c-.979,0-1.891-.526-2.381-1.374-.139-.239-.057-.545,.182-.683,.239-.14,.544-.057,.683,.182,.312,.54,.894,.875,1.516,.875h2.8c.896,0,1.626-.729,1.626-1.626,0-.803-.575-1.478-1.368-1.605l-3.422-.55c-1.28-.206-2.209-1.296-2.209-2.593,0-1.448,1.178-2.626,2.626-2.626h.874v-1.5c0-.276,.224-.5,.5-.5s.5,.224,.5,.5v1.5h.926c.978,0,1.891,.527,2.381,1.375,.139,.239,.057,.545-.182,.683-.241,.138-.544,.056-.683-.182-.312-.54-.894-.875-1.516-.875h-2.8c-.896,0-1.626,.729-1.626,1.626,0,.803,.575,1.478,1.368,1.605l3.422,.55c1.28,.206,2.209,1.296,2.209,2.593Z"/></svg>`;
+
+// Calendar SVG with month number embedded
+function calIconSvg(monthNum) {
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="38" height="38" viewBox="0 0 24 24" fill="none" stroke="#c8bfb5" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M8 2v4"/><path d="M16 2v4"/>
+    <rect width="18" height="18" x="3" y="4" rx="2"/>
+    <path d="M3 10h18"/>
+    <text x="12" y="19.5" font-size="7" font-family="'Noto Sans TC',sans-serif" font-weight="700" fill="#a09488" stroke="none" text-anchor="middle">${monthNum}</text>
+  </svg>`;
+}
+
+// Donut chart — correct formula: income/(income+expense), expense/(income+expense)
+// Green=收入, Orange=支出; no centre text, icon-sized by default
+function donutSvg(incomePct, expensePct, size=36) {
+  const r      = size * 0.36, cx = size/2, cy = size/2;
+  const circ   = 2 * Math.PI * r;
+  const strokeW = size * 0.18;
+  const iDash  = (incomePct  / 100) * circ;
+  const eDash  = (expensePct / 100) * circ;
+  const eOffset = circ/4 - iDash;
+  return `<svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" style="flex-shrink:0">
+    <circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="#e8e2da" stroke-width="${strokeW}"/>
+    <circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="#2d8a3e"
+      stroke-width="${strokeW}" stroke-dasharray="${iDash} ${circ-iDash}"
+      stroke-dashoffset="${circ/4}" stroke-linecap="butt"/>
+    <circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="#c96a10"
+      stroke-width="${strokeW}" stroke-dasharray="${eDash} ${circ-eDash}"
+      stroke-dashoffset="${eOffset}" stroke-linecap="butt"/>
+  </svg>`;
+}
+
+function summaryIconCell(iconSvg, bgColor, iconColor) {
+  return `<div class="sum-icon-circle" style="background:${bgColor}">
+    <div class="sum-icon-svg" style="color:${iconColor}">${iconSvg}</div>
+  </div>`;
+}
+
 function renderMonthView() {
-  // Change 2: year in dark-green
   document.getElementById('month-year-title').innerHTML=`<span class="cal-year">${viewYear}</span>年`;
-  const grid=document.getElementById('months-grid');
-  const today=new Date();
-  grid.innerHTML='';
+  const grid  = document.getElementById('months-grid');
+  const today = new Date();
+  grid.innerHTML = '';
 
-  for (let m=0; m<12; m++) {
-    const md=getMonthData(viewYear,m);
-    const isCurrent=viewYear===today.getFullYear()&&m===today.getMonth();
-    const card=document.createElement('div');
-    card.className=`month-card${isCurrent?' current-month':''}`;
-
-    // Change 1: negative balance → -NT$xxx in red
-    const balColor=md.balance<0?'var(--red)':'var(--green)';
-    // Small invest indicator
-    const investBadge=md.investTotal!==0
-      ? `<div class="month-invest-badge">${md.investTotal>=0?'+':''}${fmtShort(md.investTotal)}</div>`
-      : '';
-    card.innerHTML=`
-      <div class="month-card-label">${m+1}月</div>
-      <div class="month-card-balance" style="color:${balColor}">${fmtMoney(md.balance)}</div>
-      ${investBadge}`;
-    card.onclick=()=>openMonthDetail(viewYear,m);
+  for (let m = 0; m < 12; m++) {
+    const md        = getMonthData(viewYear, m);
+    const isCurrent = viewYear===today.getFullYear() && m===today.getMonth();
+    const balColor  = md.balance < 0 ? '#b03020' : '#1e6e2e';
+    const balStr    = md.balance < 0 ? `-${fmtMoney(Math.abs(md.balance))}` : fmtMoney(md.balance);
+    const hasData   = md.balance !== 0 || md.income !== 0 || md.expense !== 0;
+    const card      = document.createElement('div');
+    card.className  = `month-card${isCurrent?' current-month':''}`;
+    card.innerHTML  = `
+      <div class="mc-icon">${calIconSvg(m+1)}</div>
+      <div class="mc-balance" style="color:${balColor}">${hasData ? balStr : '—'}</div>
+      ${md.investTotal ? `<div class="mc-invest">${md.investTotal>=0?'+':''}${fmtShort(md.investTotal)}</div>` : ''}`;
+    card.onclick = () => openMonthDetail(viewYear, m);
     grid.appendChild(card);
   }
 
-  // Year summary (Change 6: styled sections)
-  const yd=getYearData(viewYear);
-  const incomeRatio=yd.totalIncome>0?(yd.expense/yd.totalIncome*100).toFixed(1):0;
-  const saveRatio  =yd.totalIncome>0?(yd.balance/yd.totalIncome*100).toFixed(1):0;
+  // ── Year summary ──────────────────────────────────────────────
+  const yd          = getYearData(viewYear);
+  const base        = yd.income + yd.expense;   // denominator for donut
+  const incomeRatio = yd.totalIncome > 0 ? (yd.expense / yd.totalIncome * 100).toFixed(1) : 0;
+  const saveRatio   = yd.totalIncome > 0 ? (yd.balance / yd.totalIncome * 100).toFixed(1) : 0;
+  // Corrected %: income/(income+expense), expense/(income+expense)
+  const incPct      = base > 0 ? Math.min(yd.income  / base * 100, 100) : 0;
+  const expPct      = base > 0 ? Math.min(yd.expense / base * 100, 100) : 0;
 
-  document.getElementById('year-summary').innerHTML=`
+  // colour helpers
+  const DEEP_BLUE = '#213971';
+  const DARK      = '#4a4a4a';
+
+  document.getElementById('year-summary').innerHTML = `
     <div class="summary-title">${viewYear} 年度總計</div>
+    <div class="sum-grid">
 
-    <div class="summary-section-label">💰 收支</div>
-    <div class="summary-grid">
-      <div class="summary-row">
-        <div class="summary-row-label">年度總開銷 <span class="ratio-badge">${incomeRatio}%</span></div>
-        <div class="summary-row-val" style="color:var(--red)">${fmtMoney(yd.expense)}</div>
+      <!-- 年度總開銷 -->
+      <div class="sum-card">
+        <div class="sum-card-inner">
+          ${summaryIconCell(ICON_EXPENSE,'#fef3e6','#c96a10')}
+          <div class="sum-card-content">
+            <div class="sum-card-label">年度總開銷 <span class="ratio-badge">${incomeRatio}%</span></div>
+            <div class="sum-card-val red">${fmtMoney(yd.expense)}</div>
+          </div>
+        </div>
       </div>
-      <div class="summary-row">
-        <div class="summary-row-label">年收入（含投資）</div>
-        <div class="summary-row-val" style="color:var(--green)">${fmtMoney(yd.totalIncome)}</div>
-      </div>
-      <div class="summary-row">
-        <div class="summary-row-label">年度剩餘存款 <span class="ratio-badge">${saveRatio}%</span></div>
-        <div class="summary-row-val" style="color:${yd.balance<0?'var(--red)':'var(--green)'}">${fmtMoney(yd.balance)}</div>
-      </div>
-    </div>
 
-    <div class="summary-section-label" style="margin-top:12px">📈 投資</div>
-    <div class="summary-grid">
-      <div class="summary-row">
-        <div class="summary-row-label">年總投資報酬</div>
-        <div class="summary-row-val" style="color:var(--invest-blue)">${fmtMoney(yd.investTotal)}</div>
+      <!-- 年收入 (綠色圖示, 深黑數字) -->
+      <div class="sum-card">
+        <div class="sum-card-inner">
+          ${summaryIconCell(ICON_INCOME,'#eaf6ec','#2d8a3e')}
+          <div class="sum-card-content">
+            <div class="sum-card-label">年收入（含投資）</div>
+            <div class="sum-card-val" style="color:${DARK}">${fmtMoney(yd.totalIncome)}</div>
+          </div>
+        </div>
       </div>
-      <div class="summary-row">
-        <div class="summary-row-label">年利息</div>
-        <div class="summary-row-val" style="color:var(--invest-blue)">${fmtMoney(yd.interest)}</div>
+
+      <!-- 年度剩餘 (綠色圖示, 深黑數字) -->
+      <div class="sum-card">
+        <div class="sum-card-inner">
+          ${summaryIconCell(ICON_BALANCE,'#eaf6ec','#2d8a3e')}
+          <div class="sum-card-content">
+            <div class="sum-card-label">年度剩餘存款 <span class="ratio-badge">${saveRatio}%</span></div>
+            <div class="sum-card-val ${yd.balance<0?'red':''}" style="${yd.balance>=0?'color:'+DARK:''}">${fmtMoney(yd.balance)}</div>
+          </div>
+        </div>
       </div>
-      <div class="summary-row">
-        <div class="summary-row-label">年股息</div>
-        <div class="summary-row-val" style="color:var(--invest-blue)">${fmtMoney(yd.dividend)}</div>
+
+      <!-- 收支圓餅圖 -->
+      <div class="sum-card">
+        <div class="sum-card-inner" style="gap:10px;align-items:center">
+          ${donutSvg(parseFloat(incPct.toFixed(0)), parseFloat(expPct.toFixed(0)))}
+          <div style="display:flex;flex-direction:column;gap:6px;justify-content:center">
+            <div style="display:flex;align-items:center;gap:5px;font-size:10px;color:var(--text2)">
+              <span style="width:8px;height:8px;border-radius:50%;background:#2d8a3e;flex-shrink:0"></span>
+              收入 <b style="font-family:var(--mono);margin-left:3px">${incPct.toFixed(0)}%</b>
+            </div>
+            <div style="display:flex;align-items:center;gap:5px;font-size:10px;color:var(--text2)">
+              <span style="width:8px;height:8px;border-radius:50%;background:#c96a10;flex-shrink:0"></span>
+              支出 <b style="font-family:var(--mono);margin-left:3px">${expPct.toFixed(0)}%</b>
+            </div>
+          </div>
+        </div>
       </div>
-      <div class="summary-row">
-        <div class="summary-row-label">年獲利（股票）</div>
-        <div class="summary-row-val" style="color:${yd.stockGain<0?'var(--red)':'var(--invest-blue)'}">${fmtMoney(yd.stockGain)}</div>
+
+      <!-- 年總投資報酬 -->
+      <div class="sum-card">
+        <div class="sum-card-inner">
+          ${summaryIconCell(ICON_INVEST,'#eef2fb','#213971')}
+          <div class="sum-card-content">
+            <div class="sum-card-label">年總投資報酬</div>
+            <div class="sum-card-val" style="color:${DEEP_BLUE}">${fmtMoney(yd.investTotal)}</div>
+          </div>
+        </div>
       </div>
+
+      <!-- 年利息 -->
+      <div class="sum-card">
+        <div class="sum-card-inner">
+          ${summaryIconCell(ICON_INTEREST,'#eef2fb','#213971')}
+          <div class="sum-card-content">
+            <div class="sum-card-label">年利息</div>
+            <div class="sum-card-val" style="color:${DEEP_BLUE}">${fmtMoney(yd.interest)}</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 年股息 -->
+      <div class="sum-card">
+        <div class="sum-card-inner">
+          ${summaryIconCell(ICON_INTEREST,'#eef2fb','#213971')}
+          <div class="sum-card-content">
+            <div class="sum-card-label">年股息</div>
+            <div class="sum-card-val" style="color:${DEEP_BLUE}">${fmtMoney(yd.dividend)}</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 年獲利(股票) -->
+      <div class="sum-card">
+        <div class="sum-card-inner">
+          ${summaryIconCell(ICON_STOCK,'#eef2fb','#213971')}
+          <div class="sum-card-content">
+            <div class="sum-card-label">年獲利（股票）</div>
+            <div class="sum-card-val ${yd.stockGain<0?'red':''}" style="${yd.stockGain>=0?'color:'+DEEP_BLUE:''}">${fmtMoney(yd.stockGain)}</div>
+          </div>
+        </div>
+      </div>
+
     </div>`;
 }
 
@@ -778,48 +886,99 @@ function closeMonthDetailModal(e) {
 
 // ===== YEAR VIEW =====
 function renderYearView() {
-  const years = getAllRecordYears();
+  const years  = getAllRecordYears();
   const tableEl = document.getElementById('year-table');
   const irrList = [];
 
-  let tableHtml = `
-    <thead><tr>
-      <th>年份</th><th>年收入</th><th>年度開銷</th><th>年度剩餘</th><th>資產</th><th>年投資報酬</th><th>IRR</th>
-    </tr></thead><tbody>`;
-
+  // Build card list instead of table
+  let cardsHtml = '';
   for (const y of years) {
     const yd    = getYearData(y);
     const asset = getAsset(y);
     const base  = asset - yd.investTotal;
     const irr   = base > 0 ? (yd.investTotal / base * 100) : 0;
     irrList.push(irr);
-    tableHtml += `<tr>
-      <td>${y}</td>
-      <td style="color:var(--green)">${fmtMoney(yd.totalIncome)}</td>
-      <td>${fmtMoney(yd.expense)}</td>
-      <td style="color:${yd.balance<0?'var(--red)':'var(--green)'}">${fmtMoney(yd.balance)}</td>
-      <td style="color:var(--invest-blue)">${fmtMoney(asset)}</td>
-      <td style="color:${yd.investTotal<0?'var(--red)':'var(--invest-blue)'}">${fmtMoney(yd.investTotal)}</td>
-      <td>${irr.toFixed(2)}%</td>
-    </tr>`;
-  }
-  tableHtml += `</tbody>`;
-  tableEl.innerHTML = tableHtml;
 
-  // IRR average + buttons bar below table
+    const assetColor  = '#213971';
+    const investColor = yd.investTotal < 0 ? '#b03020' : '#213971';
+    const balColor    = yd.balance < 0    ? '#b03020' : '#1e6e2e';
+    const irrColor    = irr < 0           ? '#b03020' : '#213971';
+
+    cardsHtml += `
+    <div class="yr-card" id="yr-card-${y}">
+      <!-- Main row (always visible) -->
+      <div class="yr-main" onclick="toggleYrDetail(${y})">
+        <div class="yr-main-year">${y}</div>
+        <div class="yr-main-col">
+          <div class="yr-col-label">資產</div>
+          <div class="yr-col-val" style="color:${assetColor}">${fmtMoney(asset)}</div>
+        </div>
+        <div class="yr-main-col">
+          <div class="yr-col-label">年投資報酬</div>
+          <div class="yr-col-val" style="color:${investColor}">${fmtMoney(yd.investTotal)}</div>
+        </div>
+        <div class="yr-main-col">
+          <div class="yr-col-label">IRR</div>
+          <div class="yr-col-val" style="color:${irrColor}">${irr.toFixed(2)}%</div>
+        </div>
+        <div class="yr-chevron" id="yr-chev-${y}">▼</div>
+      </div>
+      <!-- Detail row (hidden by default) -->
+      <div class="yr-detail" id="yr-detail-${y}" style="display:none">
+        <div class="yr-detail-grid">
+          <div class="yr-detail-item">
+            <div class="yr-col-label">年收入</div>
+            <div class="yr-col-val" style="color:#1e6e2e">${fmtMoney(yd.totalIncome)}</div>
+          </div>
+          <div class="yr-detail-item">
+            <div class="yr-col-label">年度開銷</div>
+            <div class="yr-col-val" style="color:#b03020">${fmtMoney(yd.expense)}</div>
+          </div>
+          <div class="yr-detail-item">
+            <div class="yr-col-label">年度剩餘</div>
+            <div class="yr-col-val" style="color:${balColor}">${fmtMoney(yd.balance)}</div>
+          </div>
+        </div>
+      </div>
+    </div>`;
+  }
+
+  // Replace table with card list
+  tableEl.innerHTML = '';
+  tableEl.style.display = 'none';
+
+  // Remove old card container if exists
+  let cardContainer = document.getElementById('yr-card-container');
+  if (cardContainer) cardContainer.remove();
+  cardContainer = document.createElement('div');
+  cardContainer.id = 'yr-card-container';
+  cardContainer.style.cssText = 'padding:10px 12px 4px';
+  cardContainer.innerHTML = cardsHtml;
+  tableEl.parentElement.insertBefore(cardContainer, tableEl);
+
+  // IRR average + buttons bar
   const avgIrr = irrList.length ? (irrList.reduce((s,v)=>s+v,0)/irrList.length).toFixed(2) : 0;
   const existingMeta = document.getElementById('year-meta');
   if (existingMeta) existingMeta.remove();
   const meta = document.createElement('div');
   meta.id = 'year-meta';
-  meta.style.cssText = 'padding:10px 12px 16px;font-size:12px;color:var(--text2);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px';
+  meta.style.cssText = 'padding:8px 12px 16px;font-size:12px;color:var(--text2);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px';
   meta.innerHTML = `
-    <span style="font-size:12px">歷年 IRR 平均：<b style="color:var(--invest-blue);font-family:var(--mono);font-size:14px">${avgIrr}%</b></span>
+    <span>歷年 IRR 平均：<b style="color:#213971;font-family:var(--mono);font-size:14px">${avgIrr}%</b></span>
     <div style="display:flex;gap:8px">
       <button onclick="openManualYearModal()" style="padding:8px 14px;background:var(--bg3);border:1px solid var(--border);color:var(--text2);border-radius:var(--radius-sm);font-family:var(--font);font-size:12px;font-weight:600;cursor:pointer">✏️ 輸入歷史資料</button>
       <button onclick="openAssetChart()" style="padding:8px 14px;background:var(--accent);color:#fff;border:none;border-radius:var(--radius-sm);font-family:var(--font);font-size:12px;font-weight:700;cursor:pointer">📈 資產線圖</button>
     </div>`;
   tableEl.parentElement.appendChild(meta);
+}
+
+function toggleYrDetail(y) {
+  const detail = document.getElementById(`yr-detail-${y}`);
+  const chev   = document.getElementById(`yr-chev-${y}`);
+  if (!detail) return;
+  const open = detail.style.display === 'none';
+  detail.style.display = open ? 'block' : 'none';
+  if (chev) chev.style.transform = open ? 'rotate(180deg)' : 'rotate(0deg)';
 }
 
 function openManualYearModal() {
@@ -1491,28 +1650,46 @@ function renderPortfolioContent(rows, updatedAt) {
   });
 }
 
-// Pure-canvas SVG-free pie chart
+// Canvas hollow donut chart for portfolio
 function drawPie(canvasId, legendId, slices, total) {
   const canvas = document.getElementById(canvasId);
   if (!canvas) return;
-  const ctx  = canvas.getContext('2d');
-  const W = canvas.width, H = canvas.height;
-  const cx = W/2, cy = H/2, r = Math.min(W,H)/2 - 4;
-  ctx.clearRect(0,0,W,H);
+  const dpr = window.devicePixelRatio || 1;
+  const SIZE = 140; // logical px
+  canvas.width  = SIZE * dpr;
+  canvas.height = SIZE * dpr;
+  canvas.style.width  = SIZE + 'px';
+  canvas.style.height = SIZE + 'px';
+  const ctx = canvas.getContext('2d');
+  ctx.scale(dpr, dpr);
 
+  const cx = SIZE/2, cy = SIZE/2;
+  const outerR = SIZE/2 - 6;
+  const innerR = outerR * 0.54; // hollow hole ratio
+  ctx.clearRect(0, 0, SIZE, SIZE);
+
+  // Background track
+  ctx.beginPath();
+  ctx.arc(cx, cy, outerR, 0, Math.PI*2);
+  ctx.arc(cx, cy, innerR, Math.PI*2, 0, true);
+  ctx.fillStyle = '#ede9e3';
+  ctx.fill();
+
+  // Slices
   let startAngle = -Math.PI / 2;
   slices.forEach(s => {
-    const slice = (s.val / total) * 2 * Math.PI;
+    const sweep = (s.val / total) * 2 * Math.PI;
     ctx.beginPath();
-    ctx.moveTo(cx, cy);
-    ctx.arc(cx, cy, r, startAngle, startAngle + slice);
+    ctx.arc(cx, cy, outerR, startAngle, startAngle + sweep);
+    ctx.arc(cx, cy, innerR, startAngle + sweep, startAngle, true);
     ctx.closePath();
     ctx.fillStyle = s.color;
     ctx.fill();
+    // thin white separator
     ctx.strokeStyle = '#fff';
     ctx.lineWidth = 1.5;
     ctx.stroke();
-    startAngle += slice;
+    startAngle += sweep;
   });
 
   // Legend
@@ -1522,7 +1699,7 @@ function drawPie(canvasId, legendId, slices, total) {
     const pct = total > 0 ? (s.val/total*100).toFixed(1) : 0;
     return `<div class="port-legend-item">
       <div class="port-legend-dot" style="background:${s.color}"></div>
-      <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:70px">${s.label}</span>
+      <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:66px">${s.label}</span>
       <span class="port-legend-pct">${pct}%</span>
     </div>`;
   }).join('');
