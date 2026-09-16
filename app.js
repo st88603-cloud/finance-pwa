@@ -1263,9 +1263,10 @@ function renderSettingsBody() {
     <div class="settings-section">
       <div class="settings-section-title">📊 投資配置 — Google Sheet</div>
       <div class="settings-item" style="flex-direction:column;align-items:flex-start;gap:10px;">
-        <div style="font-size:12px;color:var(--text3);line-height:1.6">
-          在 Google Sheet 分享設定為「知道連結的人可以查看」，<br>
-          再點選 檔案 → 發布到網路 → 選擇分頁 → CSV 格式，複製連結貼到下方
+        <div style="font-size:12px;color:var(--text3);line-height:1.7">
+          <b>建議方式（穩定）：Google Apps Script 中繼</b><br>
+          至 script.google.com 建新專案，部署為網頁應用程式，貼入 exec 網址<br><br>
+          <b>舊方式（可能失效）：</b>Google Sheet 分享設定「知道連結的人可以查看」，貼上編輯網址
         </div>
         <div style="display:flex;gap:8px;width:100%;align-items:center">
           <input id="sheet-url-input" class="form-input"
@@ -1292,12 +1293,14 @@ function renderSettingsBody() {
 }
 function normalizeSheetUrl(url) {
   if (!url) return '';
+  // Apps Script exec URL — use as-is
+  if (url.includes('script.google.com')) return url;
   // Already a CSV export or pub URL — keep as-is
   if (url.includes('/export?') || url.includes('/pub?')) return url;
-  // Extract spreadsheet ID and gid from edit/view URLs
+  // Convert edit/view URL to export CSV URL
   const idMatch  = url.match(/\/spreadsheets\/d\/([a-zA-Z0-9_-]+)/);
   const gidMatch = url.match(/[?&#]gid=(\d+)/);
-  if (!idMatch) return url; // unknown format, return unchanged
+  if (!idMatch) return url;
   const id  = idMatch[1];
   const gid = gidMatch ? gidMatch[1] : '0';
   return `https://docs.google.com/spreadsheets/d/${id}/export?format=csv&gid=${gid}`;
@@ -1705,38 +1708,43 @@ function drawPie(canvasId, legendId, slices, total) {
   }).join('');
 }
 
-// Fetch CSV from Google Sheets — use CORS proxy with cache-busting to prevent stale proxy cache
+// Fetch CSV — Apps Script URL can be fetched directly (no CORS issue)
+// Legacy Google Sheet export URLs fall back to proxies
 async function fetchPortfolioData() {
   if (!DB.sheetUrl) {
-    showToast('請先在設定輸入 Google Sheet 網址');
+    showToast('請先在設定輸入網址');
     return;
   }
   const btn = document.getElementById('port-update-btn');
   if (btn) { btn.classList.add('loading'); btn.innerHTML = '⏳ 抓取中...'; }
 
-  // Add timestamp to bust both browser cache AND proxy cache
   const ts     = Date.now();
-  const csvUrl = DB.sheetUrl + (DB.sheetUrl.includes('?') ? '&' : '?') + '_t=' + ts;
+  const rawUrl = DB.sheetUrl;
+  const isAppsScript = rawUrl.includes('script.google.com');
 
-  const proxies = [
-    u => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}&_t=${ts}`,
-    u => `https://corsproxy.io/?${encodeURIComponent(u)}`,
-    u => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(u)}`,
-  ];
+  // Apps Script URL: fetch directly (has proper CORS headers)
+  // Sheet export URL: need CORS proxy
+  const attempts = isAppsScript
+    ? [ () => fetch(rawUrl + (rawUrl.includes('?') ? '&' : '?') + '_t=' + ts,
+                    { cache:'no-store', headers:{'Cache-Control':'no-cache'} }) ]
+    : [
+        () => fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent(rawUrl)}&_t=${ts}`,
+                    { cache:'no-store' }),
+        () => fetch(`https://corsproxy.io/?${encodeURIComponent(rawUrl)}`,
+                    { cache:'no-store' }),
+        () => fetch(`https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(rawUrl)}`,
+                    { cache:'no-store' }),
+      ];
 
   let lastError = '';
-  for (const makeUrl of proxies) {
+  for (const attempt of attempts) {
     try {
-      const proxyUrl = makeUrl(csvUrl);
-      const res = await fetch(proxyUrl, {
-        cache: 'no-store',
-        headers: { 'Cache-Control': 'no-cache, no-store', 'Pragma': 'no-cache' }
-      });
+      const res = await attempt();
       if (!res.ok) { lastError = `HTTP ${res.status}`; continue; }
       const text = await res.text();
-      if (!text || text.trim().startsWith('<')) { lastError = '回傳非 CSV 內容'; continue; }
+      if (!text || text.trim().startsWith('<')) { lastError = '回傳非 CSV 內容（可能需要登入）'; continue; }
       const rows = parseSheetCSV(text);
-      if (!rows.length) { lastError = '找不到資料列，請確認 Sheet 欄位結構'; continue; }
+      if (!rows.length) { lastError = '找不到資料列，請確認欄位結構'; continue; }
       const now = new Date().toLocaleString('zh-TW');
       DB.portfolioCache = { rows, updatedAt: now };
       saveData(DB);
@@ -1744,24 +1752,31 @@ async function fetchPortfolioData() {
       showToast(`✅ 已更新 ${rows.length} 筆資料`);
       if (btn) { btn.classList.remove('loading'); btn.innerHTML = '🔄 更新資料'; }
       return;
-    } catch(e) {
-      lastError = e.message;
-    }
+    } catch(e) { lastError = e.message; }
   }
 
-  // All proxies failed
+  // All failed
   if (btn) { btn.classList.remove('loading'); btn.innerHTML = '🔄 更新資料'; }
-  showToast('抓取失敗，請確認網路與分享設定');
+  showToast('抓取失敗：' + lastError);
+
+  const isOldFormat = !isAppsScript;
   document.getElementById('port-body').innerHTML = `
     <div class="port-status">
       ❌ 抓取失敗<br>
       <small style="color:var(--red)">${lastError}</small><br><br>
-      <div style="text-align:left;font-size:12px;color:var(--text2);line-height:1.8">
-        請確認：<br>
-        ① Google Sheet 共用設定為「知道連結的人可以<b>檢視</b>」<br>
-        ② 設定中的網址正確（貼上編輯網址即可）<br>
-        ③ 手機有網路連線<br>
-        ④ 若持續失敗，嘗試重新儲存網址後再更新
+      <div style="text-align:left;font-size:12px;color:var(--text2);line-height:1.9">
+        ${isOldFormat ? `
+        ⚠️ Google 已封鎖第三方 Proxy 對 Sheets 的存取<br>
+        建議改用 <b>Google Apps Script</b> 中繼方案：<br>
+        ① 至 <a href="https://script.google.com" target="_blank" style="color:var(--accent)">script.google.com</a> 建立新專案<br>
+        ② 貼入中繼程式碼並部署為「任何人可存取」的網頁應用程式<br>
+        ③ 複製 exec 網址貼回設定即可<br>
+        <small style="color:var(--text3)">（詳細步驟請參考說明文件）</small>
+        ` : `
+        ① 確認 Apps Script 部署設定為「任何人可存取」<br>
+        ② 重新部署後複製新的 exec 網址<br>
+        ③ 確認 SHEET_ID 和 GID 填寫正確
+        `}
       </div>
     </div>`;
 }
