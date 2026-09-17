@@ -1708,8 +1708,34 @@ function drawPie(canvasId, legendId, slices, total) {
   }).join('');
 }
 
-// Fetch CSV — Apps Script URL can be fetched directly (no CORS issue)
-// Legacy Google Sheet export URLs fall back to proxies
+// Fetch via dynamic <script> tag (JSONP style) to bypass CORS on Apps Script redirects
+function fetchViaScriptTag(url) {
+  return new Promise((resolve, reject) => {
+    const cbName = '_gsCallback_' + Date.now();
+    const timeout = setTimeout(() => {
+      delete window[cbName];
+      if (script.parentNode) script.parentNode.removeChild(script);
+      reject(new Error('Timeout'));
+    }, 15000);
+
+    window[cbName] = (data) => {
+      clearTimeout(timeout);
+      delete window[cbName];
+      if (script.parentNode) script.parentNode.removeChild(script);
+      resolve(data);
+    };
+
+    const script = document.createElement('script');
+    script.src = url + (url.includes('?') ? '&' : '?') + 'callback=' + cbName + '&_t=' + Date.now();
+    script.onerror = () => {
+      clearTimeout(timeout);
+      delete window[cbName];
+      reject(new Error('Script load failed'));
+    };
+    document.head.appendChild(script);
+  });
+}
+
 async function fetchPortfolioData() {
   if (!DB.sheetUrl) {
     showToast('請先在設定輸入網址');
@@ -1718,65 +1744,94 @@ async function fetchPortfolioData() {
   const btn = document.getElementById('port-update-btn');
   if (btn) { btn.classList.add('loading'); btn.innerHTML = '⏳ 抓取中...'; }
 
-  const ts     = Date.now();
-  const rawUrl = DB.sheetUrl;
+  const rawUrl       = DB.sheetUrl;
   const isAppsScript = rawUrl.includes('script.google.com');
+  const ts           = Date.now();
 
-  // Apps Script URL: fetch directly (has proper CORS headers)
-  // Sheet export URL: need CORS proxy
-  const attempts = isAppsScript
-    ? [ () => fetch(rawUrl + (rawUrl.includes('?') ? '&' : '?') + '_t=' + ts,
-                    { cache:'no-store', headers:{'Cache-Control':'no-cache'} }) ]
-    : [
-        () => fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent(rawUrl)}&_t=${ts}`,
-                    { cache:'no-store' }),
-        () => fetch(`https://corsproxy.io/?${encodeURIComponent(rawUrl)}`,
-                    { cache:'no-store' }),
-        () => fetch(`https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(rawUrl)}`,
-                    { cache:'no-store' }),
-      ];
-
+  let csvText = null;
   let lastError = '';
-  for (const attempt of attempts) {
+
+  if (isAppsScript) {
+    // Method 1: fetch with redirect:follow (works in some browsers)
     try {
-      const res = await attempt();
-      if (!res.ok) { lastError = `HTTP ${res.status}`; continue; }
-      const text = await res.text();
-      if (!text || text.trim().startsWith('<')) { lastError = '回傳非 CSV 內容（可能需要登入）'; continue; }
-      const rows = parseSheetCSV(text);
-      if (!rows.length) { lastError = '找不到資料列，請確認欄位結構'; continue; }
+      const res = await fetch(rawUrl + '?_t=' + ts, {
+        cache: 'no-store', redirect: 'follow',
+        headers: { 'Cache-Control': 'no-cache' }
+      });
+      if (res.ok) {
+        const text = await res.text();
+        if (text && !text.trim().startsWith('<') && !text.startsWith('ERROR:')) {
+          csvText = text;
+        } else {
+          lastError = text.startsWith('ERROR:') ? text : '回傳非 CSV 內容';
+        }
+      } else {
+        lastError = 'HTTP ' + res.status;
+      }
+    } catch(e) { lastError = e.message; }
+
+    // Method 2: JSONP via script tag (Apps Script must return JSON with callback)
+    if (!csvText) {
+      try {
+        const data = await fetchViaScriptTag(rawUrl);
+        if (data && data.csv) csvText = data.csv;
+        else if (typeof data === 'string') csvText = data;
+      } catch(e) { lastError = e.message; }
+    }
+
+    // Method 3: try via proxy as last resort
+    if (!csvText) {
+      try {
+        const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(rawUrl)}&_t=${ts}`;
+        const res = await fetch(proxyUrl, { cache: 'no-store' });
+        if (res.ok) {
+          const text = await res.text();
+          if (text && !text.trim().startsWith('<')) csvText = text;
+        }
+      } catch(e) { lastError = e.message; }
+    }
+
+  } else {
+    // Plain CSV export URL — try proxies
+    const proxies = [
+      `https://api.allorigins.win/raw?url=${encodeURIComponent(rawUrl)}&_t=${ts}`,
+      `https://corsproxy.io/?${encodeURIComponent(rawUrl)}`,
+    ];
+    for (const proxyUrl of proxies) {
+      try {
+        const res = await fetch(proxyUrl, { cache: 'no-store' });
+        if (!res.ok) { lastError = 'HTTP ' + res.status; continue; }
+        const text = await res.text();
+        if (text && !text.trim().startsWith('<')) { csvText = text; break; }
+        lastError = '回傳非 CSV 內容';
+      } catch(e) { lastError = e.message; }
+    }
+  }
+
+  if (btn) { btn.classList.remove('loading'); btn.innerHTML = '🔄 更新資料'; }
+
+  if (csvText) {
+    const rows = parseSheetCSV(csvText);
+    if (rows.length) {
       const now = new Date().toLocaleString('zh-TW');
       DB.portfolioCache = { rows, updatedAt: now };
       saveData(DB);
       renderPortfolioContent(rows, now);
-      showToast(`✅ 已更新 ${rows.length} 筆資料`);
-      if (btn) { btn.classList.remove('loading'); btn.innerHTML = '🔄 更新資料'; }
+      showToast('✅ 已更新 ' + rows.length + ' 筆資料');
       return;
-    } catch(e) { lastError = e.message; }
+    }
+    lastError = '找不到資料列，請確認欄位結構';
   }
 
-  // All failed
-  if (btn) { btn.classList.remove('loading'); btn.innerHTML = '🔄 更新資料'; }
   showToast('抓取失敗：' + lastError);
-
-  const isOldFormat = !isAppsScript;
   document.getElementById('port-body').innerHTML = `
     <div class="port-status">
       ❌ 抓取失敗<br>
       <small style="color:var(--red)">${lastError}</small><br><br>
       <div style="text-align:left;font-size:12px;color:var(--text2);line-height:1.9">
-        ${isOldFormat ? `
-        ⚠️ Google 已封鎖第三方 Proxy 對 Sheets 的存取<br>
-        建議改用 <b>Google Apps Script</b> 中繼方案：<br>
-        ① 至 <a href="https://script.google.com" target="_blank" style="color:var(--accent)">script.google.com</a> 建立新專案<br>
-        ② 貼入中繼程式碼並部署為「任何人可存取」的網頁應用程式<br>
-        ③ 複製 exec 網址貼回設定即可<br>
-        <small style="color:var(--text3)">（詳細步驟請參考說明文件）</small>
-        ` : `
-        ① 確認 Apps Script 部署設定為「任何人可存取」<br>
-        ② 重新部署後複製新的 exec 網址<br>
-        ③ 確認 SHEET_ID 和 GID 填寫正確
-        `}
+        Apps Script CORS 限制，請更新 Apps Script 程式碼支援 JSONP：<br>
+        在 doGet 函數中加入 callback 參數處理，<br>
+        或改用「JSON 回傳模式」（詳見說明）
       </div>
     </div>`;
 }
